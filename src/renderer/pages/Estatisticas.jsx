@@ -1,0 +1,266 @@
+import React, { useState, useEffect } from 'react'
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  LineChart, Line, ResponsiveContainer
+} from 'recharts'
+import { useDatabase } from '../hooks/useDatabase.js'
+
+const CORES_GRAFICO = [
+  '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#14B8A6'
+]
+
+const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+function CustomTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-lg text-sm">
+        <p className="font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}</p>
+        ))}
+      </div>
+    )
+  }
+  return null
+}
+
+export default function Estatisticas() {
+  const db = useDatabase()
+  const anoAtual = new Date().getFullYear()
+  const [anoSelecionado, setAnoSelecionado] = useState(anoAtual)
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { carregarStats() }, [anoSelecionado])
+
+  async function carregarStats() {
+    setLoading(true)
+    const data = await db.obterEstatisticas(anoSelecionado)
+    setStats(data)
+    setLoading(false)
+  }
+
+  const anosDisponiveis = Array.from({ length: 5 }, (_, i) => anoAtual - 2 + i)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      </div>
+    )
+  }
+
+  if (!stats) return null
+
+  // Prepare chart data
+  const dadosPorEstado = stats.porEstado.map(e => ({ name: e.estado, value: e.total }))
+
+  const dadosPorDisciplina = stats.porDisciplina.map((d, i) => ({
+    name: d.disciplina_nome.length > 15 ? d.disciplina_nome.substring(0, 15) + '…' : d.disciplina_nome,
+    horas: parseFloat(d.total_horas?.toFixed(1) || 0),
+    aulas: d.total_aulas,
+    fill: CORES_GRAFICO[i % CORES_GRAFICO.length]
+  }))
+
+  const dadosEvolucao = stats.evolucaoMensal.map(m => {
+    const [, mesStr] = m.mes.split('-')
+    const mesIdx = parseInt(mesStr) - 1
+    return {
+      mes: MESES_ABREV[mesIdx] || m.mes,
+      aulas: m.total_aulas,
+      horas: parseFloat(m.total_horas?.toFixed(1) || 0)
+    }
+  })
+
+  // Calculate avg hours per week
+  const totalHoras = stats.porDisciplina.reduce((s, d) => s + (d.total_horas || 0), 0)
+  const semanas = 52
+  const mediaHorasSemana = (totalHoras / semanas).toFixed(1)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="page-title">Estatísticas</h1>
+        <select
+          value={anoSelecionado}
+          onChange={e => setAnoSelecionado(parseInt(e.target.value))}
+          className="input-field w-auto"
+        >
+          {anosDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="card text-center">
+          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.totalAulas}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Total Aulas</p>
+        </div>
+        <div className="card text-center">
+          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.realizadas}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Realizadas</p>
+        </div>
+        <div className="card text-center">
+          <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.taxaConclusao}%</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Taxa de Realização</p>
+        </div>
+        <div className="card text-center">
+          <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{mediaHorasSemana}h</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Média Semanal</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Status pie chart */}
+        <div className="card">
+          <h2 className="section-title mb-4">Aulas por Estado</h2>
+          {dadosPorEstado.length === 0 ? (
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
+              <p className="text-sm">Sem dados</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie
+                  data={dadosPorEstado}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={3}
+                  dataKey="value"
+                  label={({ name, value }) => `${name}: ${value}`}
+                  labelLine={false}
+                >
+                  {dadosPorEstado.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={
+                        entry.name === 'Realizada' ? '#22C55E' :
+                        entry.name === 'Planeada' ? '#3B82F6' :
+                        entry.name === 'Adiada' ? '#F59E0B' : '#EF4444'
+                      }
+                    />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Hours by discipline */}
+        <div className="card">
+          <h2 className="section-title mb-4">Horas por Disciplina</h2>
+          {dadosPorDisciplina.length === 0 ? (
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
+              <p className="text-sm">Sem dados</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={dadosPorDisciplina} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis type="number" tick={{ fontSize: 12 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="horas" name="Horas" radius={[0, 4, 4, 0]}>
+                  {dadosPorDisciplina.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Monthly evolution */}
+      <div className="card">
+        <h2 className="section-title mb-4">Evolução Mensal {anoSelecionado}</h2>
+        {dadosEvolucao.length === 0 ? (
+          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
+            <p className="text-sm">Sem dados de evolução mensal</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={dadosEvolucao} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="horas"
+                name="Horas"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="aulas"
+                name="Aulas"
+                stroke="#22C55E"
+                strokeWidth={2}
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Discipline detail table */}
+      {stats.porDisciplina.length > 0 && (
+        <div className="card">
+          <h2 className="section-title mb-4">Detalhe por Disciplina</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Disciplina</th>
+                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Aulas</th>
+                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Horas</th>
+                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">% do Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {stats.porDisciplina.map((d, i) => (
+                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="py-2.5 flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length] }} />
+                      <span className="font-medium text-gray-900 dark:text-white">{d.disciplina_nome}</span>
+                    </td>
+                    <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{d.total_aulas}</td>
+                    <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{(d.total_horas || 0).toFixed(1)}h</td>
+                    <td className="py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${totalHoras > 0 ? (d.total_horas / totalHoras * 100) : 0}%`,
+                              backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length]
+                            }}
+                          />
+                        </div>
+                        <span className="text-gray-600 dark:text-gray-400 w-10 text-right">
+                          {totalHoras > 0 ? ((d.total_horas / totalHoras) * 100).toFixed(0) : 0}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
