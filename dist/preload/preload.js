@@ -42,7 +42,8 @@ electron.contextBridge.exposeInMainWorld("api", {
     editar: (id, dados) => invoke("aulas:editar", { id, dados }),
     eliminar: (id) => invoke("aulas:eliminar", id),
     gerarAutomatico: (turma_id, data_inicio, data_fim) => invoke("aulas:gerarAutomatico", { turma_id, data_inicio, data_fim }),
-    proximoNumero: (turma_id) => invoke("aulas:proximoNumero", turma_id)
+    proximoNumero: (turma_id) => invoke("aulas:proximoNumero", turma_id),
+    eliminarDaDisciplina: (disciplina_id) => invoke("aulas:eliminarDaDisciplina", disciplina_id)
   },
   // Dias Não Lectivos
   diasNaoLetivos: {
@@ -74,9 +75,36 @@ electron.contextBridge.exposeInMainWorld("api", {
     aulaPlano: (aula, config) => invoke("export:aulaPlano", { aula, config }),
     relatorioFinanceiro: (dados, tipo, ano, mes, config) => invoke("export:relatorioFinanceiro", { dados, tipo, ano, mes, config })
   },
+  // Instituições
+  instituicoes: {
+    listar: () => invoke("instituicoes:listar"),
+    criar: (dados) => invoke("instituicoes:criar", dados),
+    editar: (id, dados) => invoke("instituicoes:editar", { id, dados }),
+    eliminar: (id) => invoke("instituicoes:eliminar", id)
+  },
+  // Cursos
+  cursos: {
+    listar: (instituicao_id) => invoke("cursos:listar", instituicao_id),
+    criar: (dados) => invoke("cursos:criar", dados),
+    editar: (id, dados) => invoke("cursos:editar", { id, dados }),
+    eliminar: (id) => invoke("cursos:eliminar", id)
+  },
+  // Períodos Não Letivos
+  periodosNaoLetivos: {
+    listar: (instituicao_id) => invoke("periodosNaoLetivos:listar", instituicao_id),
+    criar: (dados) => invoke("periodosNaoLetivos:criar", dados),
+    eliminar: (id) => invoke("periodosNaoLetivos:eliminar", id)
+  },
   // Backup
   backup: {
     exportar: () => invoke("backup:exportar"),
     importar: () => invoke("backup:importar")
+  },
+  // Outros Rendimentos
+  outrosRendimentos: {
+    listar: (filtros) => invoke("outrosRendimentos:listar", filtros),
+    criar: (dados) => invoke("outrosRendimentos:criar", dados),
+    editar: (id, dados) => invoke("outrosRendimentos:editar", { id, dados }),
+    eliminar: (id) => invoke("outrosRendimentos:eliminar", id)
   }
 });

@@ -121,10 +121,35 @@ function runMigrations() {
       descricao TEXT NOT NULL DEFAULT '',
       tipo TEXT NOT NULL DEFAULT 'feriado'
     );
+
+    CREATE TABLE IF NOT EXISTS instituicoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      tipo TEXT DEFAULT 'universitária',
+      contacto TEXT,
+      notas TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS cursos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      instituicao_id INTEGER REFERENCES instituicoes(id) ON DELETE SET NULL,
+      nome TEXT NOT NULL,
+      tipo TEXT DEFAULT 'semestral',
+      ano_letivo TEXT,
+      valor_hora REAL,
+      descricao TEXT,
+      ativo INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   const colunas = db2.prepare(`PRAGMA table_info(aulas)`).all().map((c) => c.name);
   if (!colunas.includes("numero")) {
     db2.exec(`ALTER TABLE aulas ADD COLUMN numero INTEGER`);
+  }
+  const colunasDisciplinas = db2.prepare(`PRAGMA table_info(disciplinas)`).all().map((c) => c.name);
+  if (!colunasDisciplinas.includes("curso_id")) {
+    db2.exec(`ALTER TABLE disciplinas ADD COLUMN curso_id INTEGER REFERENCES cursos(id) ON DELETE SET NULL`);
   }
   const stmt = db2.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)`);
   stmt.run("tema", "light");
@@ -132,19 +157,52 @@ function runMigrations() {
   stmt.run("instituicao", "");
   stmt.run("departamento", "");
   stmt.run("ano_letivo_atual", (/* @__PURE__ */ new Date()).getFullYear() + "/" + ((/* @__PURE__ */ new Date()).getFullYear() + 1));
+  const tabelasExistentes = db2.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+  if (!tabelasExistentes.includes("outros_rendimentos")) {
+    db2.exec(`
+      CREATE TABLE outros_rendimentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        descricao TEXT NOT NULL,
+        valor REAL NOT NULL,
+        data DATE NOT NULL,
+        tipo TEXT DEFAULT 'Outro',
+        notas TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!tabelasExistentes.includes("periodos_nao_letivos")) {
+    db2.exec(`
+      CREATE TABLE periodos_nao_letivos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instituicao_id INTEGER REFERENCES instituicoes(id) ON DELETE CASCADE,
+        descricao TEXT NOT NULL,
+        data_inicio DATE NOT NULL,
+        data_fim DATE NOT NULL,
+        tipo TEXT NOT NULL DEFAULT 'férias',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
 }
 function criarDisciplina(dados) {
   const db2 = getDb();
   const stmt = db2.prepare(`
-    INSERT INTO disciplinas (nome, codigo, area_cientifica, carga_horaria, ects, tipo, descricao)
-    VALUES (@nome, @codigo, @area_cientifica, @carga_horaria, @ects, @tipo, @descricao)
+    INSERT INTO disciplinas (nome, codigo, area_cientifica, carga_horaria, ects, tipo, descricao, curso_id)
+    VALUES (@nome, @codigo, @area_cientifica, @carga_horaria, @ects, @tipo, @descricao, @curso_id)
   `);
-  const result = stmt.run(dados);
+  const result = stmt.run({ ...dados, curso_id: dados.curso_id || null });
   return { id: result.lastInsertRowid, ...dados };
 }
 function listarDisciplinas() {
   const db2 = getDb();
-  return db2.prepare("SELECT * FROM disciplinas ORDER BY nome").all();
+  return db2.prepare(`
+    SELECT d.*, c.nome as curso_nome, i.nome as instituicao_nome
+    FROM disciplinas d
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    ORDER BY d.nome
+  `).all();
 }
 function buscarDisciplina(id) {
   const db2 = getDb();
@@ -152,14 +210,13 @@ function buscarDisciplina(id) {
 }
 function editarDisciplina(id, dados) {
   const db2 = getDb();
-  const stmt = db2.prepare(`
+  db2.prepare(`
     UPDATE disciplinas
     SET nome=@nome, codigo=@codigo, area_cientifica=@area_cientifica,
         carga_horaria=@carga_horaria, ects=@ects, tipo=@tipo, descricao=@descricao,
-        updated_at=CURRENT_TIMESTAMP
+        curso_id=@curso_id, updated_at=CURRENT_TIMESTAMP
     WHERE id=@id
-  `);
-  stmt.run({ ...dados, id });
+  `).run({ ...dados, curso_id: dados.curso_id || null, id });
   return buscarDisciplina(id);
 }
 function eliminarDisciplina(id) {
@@ -363,18 +420,60 @@ function eliminarAula(id) {
   db2.prepare("DELETE FROM aulas WHERE id = ?").run(id);
   return { success: true };
 }
+function eliminarAulasDaDisciplina(disciplina_id) {
+  const db2 = getDb();
+  const info = db2.prepare(`
+    DELETE FROM aulas WHERE turma_id IN (
+      SELECT id FROM turmas WHERE disciplina_id = ?
+    )
+  `).run(disciplina_id);
+  return { success: true, eliminadas: info.changes };
+}
 function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const db2 = getDb();
   const turma = buscarTurma(turma_id);
   if (!turma) throw new Error("Turma não encontrada");
   const horarios = listarHorarios(turma_id);
   if (!horarios.length) throw new Error("Sem horários definidos para esta turma");
+  const disciplina = db2.prepare("SELECT carga_horaria FROM disciplinas WHERE id = ?").get(turma.disciplina_id);
+  const carga_horaria = disciplina?.carga_horaria || 0;
+  const rowExistentes = db2.prepare(`
+    SELECT COALESCE(SUM(
+      (CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER)) -
+      (CAST(substr(hora_inicio,1,2) AS INTEGER)*60 + CAST(substr(hora_inicio,4,2) AS INTEGER))
+    ), 0) as total_min
+    FROM aulas WHERE turma_id = ? AND estado != 'Cancelada'
+  `).get(turma_id);
+  const horas_existentes = (rowExistentes?.total_min || 0) / 60;
+  const horas_disponiveis = carga_horaria > 0 ? Math.max(0, carga_horaria - horas_existentes) : Infinity;
+  function slotHoras(h) {
+    const [hi, mi] = h.hora_inicio.split(":").map(Number);
+    const [hf, mf] = h.hora_fim.split(":").map(Number);
+    return (hf * 60 + mf - hi * 60 - mi) / 60;
+  }
   const diasNaoLetivos = new Set(
     db2.prepare("SELECT data FROM dias_nao_letivos WHERE data >= ? AND data <= ?").all(data_inicio, data_fim).map((r) => r.data)
   );
+  const disc = db2.prepare("SELECT curso_id FROM disciplinas WHERE id = ?").get(turma.disciplina_id);
+  const instId = disc?.curso_id ? db2.prepare("SELECT instituicao_id FROM cursos WHERE id = ?").get(disc.curso_id)?.instituicao_id : null;
+  const periodos = db2.prepare(`
+    SELECT data_inicio, data_fim FROM periodos_nao_letivos
+    WHERE (data_fim >= ? AND data_inicio <= ?)
+      AND (instituicao_id IS NULL ${instId ? "OR instituicao_id = ?" : ""})
+  `).all(...instId ? [data_inicio, data_fim, instId] : [data_inicio, data_fim]);
+  for (const p of periodos) {
+    const cur = new Date(Math.max(new Date(p.data_inicio), new Date(data_inicio)));
+    const fim = new Date(Math.min(new Date(p.data_fim), new Date(data_fim)));
+    while (cur <= fim) {
+      diasNaoLetivos.add(cur.toISOString().split("T")[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
   const start = new Date(data_inicio);
   const end = new Date(data_fim);
   const aulas = [];
+  let horas_geradas = 0;
+  let limite_atingido = false;
   const current = new Date(start);
   while (current <= end) {
     const dataStr = current.toISOString().split("T")[0];
@@ -382,6 +481,11 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
       const diaSemana = current.getDay();
       const horariosHoje = horarios.filter((h) => h.dia_semana === diaSemana);
       for (const h of horariosHoje) {
+        const duracaoSlot = slotHoras(h);
+        if (horas_disponiveis !== Infinity && horas_geradas + duracaoSlot > horas_disponiveis + 1e-3) {
+          limite_atingido = true;
+          break;
+        }
         const existente = db2.prepare(
           "SELECT id FROM aulas WHERE turma_id=? AND data=? AND hora_inicio=?"
         ).get(turma_id, dataStr, h.hora_inicio);
@@ -402,12 +506,78 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
             estado: "Planeada"
           });
           aulas.push(a);
+          horas_geradas += duracaoSlot;
         }
       }
     }
+    if (limite_atingido) break;
     current.setDate(current.getDate() + 1);
   }
-  return aulas;
+  return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido };
+}
+function criarInstituicao(dados) {
+  const db2 = getDb();
+  const result = db2.prepare(`
+    INSERT INTO instituicoes (nome, tipo, contacto, notas)
+    VALUES (@nome, @tipo, @contacto, @notas)
+  `).run(dados);
+  return { id: result.lastInsertRowid, ...dados };
+}
+function listarInstituicoes() {
+  const db2 = getDb();
+  return db2.prepare("SELECT * FROM instituicoes ORDER BY nome").all();
+}
+function editarInstituicao(id, dados) {
+  const db2 = getDb();
+  db2.prepare(`
+    UPDATE instituicoes SET nome=@nome, tipo=@tipo, contacto=@contacto, notas=@notas WHERE id=@id
+  `).run({ ...dados, id });
+  return db2.prepare("SELECT * FROM instituicoes WHERE id = ?").get(id);
+}
+function eliminarInstituicao(id) {
+  const db2 = getDb();
+  db2.prepare("DELETE FROM instituicoes WHERE id = ?").run(id);
+  return { success: true };
+}
+function criarCurso(dados) {
+  const db2 = getDb();
+  const result = db2.prepare(`
+    INSERT INTO cursos (instituicao_id, nome, tipo, ano_letivo, valor_hora, descricao, ativo)
+    VALUES (@instituicao_id, @nome, @tipo, @ano_letivo, @valor_hora, @descricao, @ativo)
+  `).run(dados);
+  return { id: result.lastInsertRowid, ...dados };
+}
+function listarCursos(instituicao_id) {
+  const db2 = getDb();
+  if (instituicao_id) {
+    return db2.prepare(`
+      SELECT c.*, i.nome as instituicao_nome
+      FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+      WHERE c.instituicao_id = ? ORDER BY c.nome
+    `).all(instituicao_id);
+  }
+  return db2.prepare(`
+    SELECT c.*, i.nome as instituicao_nome
+    FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    ORDER BY i.nome, c.nome
+  `).all();
+}
+function editarCurso(id, dados) {
+  const db2 = getDb();
+  db2.prepare(`
+    UPDATE cursos SET instituicao_id=@instituicao_id, nome=@nome, tipo=@tipo,
+      ano_letivo=@ano_letivo, valor_hora=@valor_hora, descricao=@descricao, ativo=@ativo
+    WHERE id=@id
+  `).run({ ...dados, id });
+  return db2.prepare(`
+    SELECT c.*, i.nome as instituicao_nome
+    FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id WHERE c.id = ?
+  `).get(id);
+}
+function eliminarCurso(id) {
+  const db2 = getDb();
+  db2.prepare("DELETE FROM cursos WHERE id = ?").run(id);
+  return { success: true };
 }
 function listarDiasNaoLetivos(ano) {
   const db2 = getDb();
@@ -518,31 +688,47 @@ function calcularFinanceiroMensal(ano, mes) {
   const taxa_irs = configFiscal?.sem_retencao ? 0 : configFiscal?.taxa_retencao_irs || 0.25;
   const porDisciplina = {};
   for (const aula of aulas) {
-    const valor = db2.prepare(`
+    let valorHora = db2.prepare(`
       SELECT valor_hora FROM valores_hora
       WHERE disciplina_id = ? AND (turma_id = ? OR turma_id IS NULL)
       ORDER BY turma_id DESC NULLS LAST
       LIMIT 1
-    `).get(aula.disciplina_id, aula.turma_id);
-    if (!valor) continue;
+    `).get(aula.disciplina_id, aula.turma_id)?.valor_hora;
+    if (valorHora == null) {
+      const disc = db2.prepare("SELECT curso_id FROM disciplinas WHERE id = ?").get(aula.disciplina_id);
+      if (disc?.curso_id) {
+        const curso = db2.prepare("SELECT valor_hora FROM cursos WHERE id = ?").get(disc.curso_id);
+        valorHora = curso?.valor_hora;
+      }
+    }
+    if (valorHora == null) continue;
     const inicio = aula.hora_inicio.split(":");
     const fim = aula.hora_fim.split(":");
     const horas = (parseInt(fim[0]) * 60 + parseInt(fim[1]) - parseInt(inicio[0]) * 60 - parseInt(inicio[1])) / 60;
     if (!porDisciplina[aula.disciplina_id]) {
-      const disc = db2.prepare("SELECT nome FROM disciplinas WHERE id = ?").get(aula.disciplina_id);
+      const disc = db2.prepare(`
+        SELECT d.nome, d.curso_id, c.nome as curso_nome
+        FROM disciplinas d LEFT JOIN cursos c ON c.id = d.curso_id WHERE d.id = ?
+      `).get(aula.disciplina_id);
       porDisciplina[aula.disciplina_id] = {
         disciplina_id: aula.disciplina_id,
         disciplina_nome: disc?.nome || "Desconhecida",
+        curso_nome: disc?.curso_nome || null,
         total_horas: 0,
-        valor_hora: valor.valor_hora,
+        valor_hora: valorHora,
         valor_bruto: 0
       };
     }
     porDisciplina[aula.disciplina_id].total_horas += horas;
-    porDisciplina[aula.disciplina_id].valor_bruto += horas * valor.valor_hora;
+    porDisciplina[aula.disciplina_id].valor_bruto += horas * valorHora;
   }
+  const outrosRendimentos = db2.prepare(
+    "SELECT * FROM outros_rendimentos WHERE strftime('%Y-%m', data) = ? ORDER BY data"
+  ).all(mesStr);
+  const total_outros_bruto = outrosRendimentos.reduce((s, r) => s + r.valor, 0);
   const itens = Object.values(porDisciplina);
-  const total_bruto = itens.reduce((s, i) => s + i.valor_bruto, 0);
+  const total_bruto_aulas = itens.reduce((s, i) => s + i.valor_bruto, 0);
+  const total_bruto = total_bruto_aulas + total_outros_bruto;
   const total_iva = total_bruto * taxa_iva;
   const total_com_iva = total_bruto + total_iva;
   const total_irs = total_bruto * taxa_irs;
@@ -551,8 +737,10 @@ function calcularFinanceiroMensal(ano, mes) {
   return {
     mes: mesStr,
     itens,
+    outros: outrosRendimentos,
     total_horas,
     total_bruto,
+    total_outros_bruto,
     taxa_iva,
     total_iva,
     total_com_iva,
@@ -616,6 +804,76 @@ function salvarConfiguracoes(pares) {
     }
   });
   transaction();
+  return { success: true };
+}
+function criarOutroRendimento(dados) {
+  const db2 = getDb();
+  const result = db2.prepare(`
+    INSERT INTO outros_rendimentos (descricao, valor, data, tipo, notas)
+    VALUES (@descricao, @valor, @data, @tipo, @notas)
+  `).run(dados);
+  return { id: result.lastInsertRowid, ...dados };
+}
+function listarOutrosRendimentos(filtros = {}) {
+  const db2 = getDb();
+  let query = "SELECT * FROM outros_rendimentos WHERE 1=1";
+  const params = [];
+  if (filtros.ano) {
+    query += " AND strftime('%Y', data) = ?";
+    params.push(String(filtros.ano));
+  }
+  if (filtros.mes) {
+    query += " AND strftime('%Y-%m', data) = ?";
+    params.push(filtros.mes);
+  }
+  query += " ORDER BY data DESC";
+  return db2.prepare(query).all(...params);
+}
+function editarOutroRendimento(id, dados) {
+  const db2 = getDb();
+  db2.prepare(`
+    UPDATE outros_rendimentos SET descricao=@descricao, valor=@valor, data=@data, tipo=@tipo, notas=@notas WHERE id=@id
+  `).run({ ...dados, id });
+  return db2.prepare("SELECT * FROM outros_rendimentos WHERE id = ?").get(id);
+}
+function eliminarOutroRendimento(id) {
+  const db2 = getDb();
+  db2.prepare("DELETE FROM outros_rendimentos WHERE id = ?").run(id);
+  return { success: true };
+}
+function listarPeriodosNaoLetivos(instituicao_id) {
+  const db2 = getDb();
+  if (instituicao_id) {
+    return db2.prepare(`
+      SELECT p.*, i.nome as instituicao_nome
+      FROM periodos_nao_letivos p
+      LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+      WHERE p.instituicao_id = ? OR p.instituicao_id IS NULL
+      ORDER BY p.data_inicio
+    `).all(instituicao_id);
+  }
+  return db2.prepare(`
+    SELECT p.*, i.nome as instituicao_nome
+    FROM periodos_nao_letivos p
+    LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+    ORDER BY p.data_inicio
+  `).all();
+}
+function criarPeriodoNaoLetivo(dados) {
+  const db2 = getDb();
+  const result = db2.prepare(`
+    INSERT INTO periodos_nao_letivos (instituicao_id, descricao, data_inicio, data_fim, tipo)
+    VALUES (@instituicao_id, @descricao, @data_inicio, @data_fim, @tipo)
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null });
+  return db2.prepare(`
+    SELECT p.*, i.nome as instituicao_nome
+    FROM periodos_nao_letivos p LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+    WHERE p.id = ?
+  `).get(result.lastInsertRowid);
+}
+function eliminarPeriodoNaoLetivo(id) {
+  const db2 = getDb();
+  db2.prepare("DELETE FROM periodos_nao_letivos WHERE id = ?").run(id);
   return { success: true };
 }
 function obterEstatisticas(ano_letivo) {
@@ -984,6 +1242,13 @@ function registerHandlers() {
       return { success: false, error: e.message };
     }
   });
+  electron.ipcMain.handle("aulas:eliminarDaDisciplina", async (_, disciplina_id) => {
+    try {
+      return { success: true, data: eliminarAulasDaDisciplina(disciplina_id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   electron.ipcMain.handle("financeiro:calcularMensal", async (_, { ano, mes }) => {
     try {
       return { success: true, data: calcularFinanceiroMensal(ano, mes) };
@@ -1080,6 +1345,27 @@ function registerHandlers() {
       return { success: false, error: e.message };
     }
   });
+  electron.ipcMain.handle("periodosNaoLetivos:listar", async (_, instituicao_id) => {
+    try {
+      return { success: true, data: listarPeriodosNaoLetivos(instituicao_id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("periodosNaoLetivos:criar", async (_, dados) => {
+    try {
+      return { success: true, data: criarPeriodoNaoLetivo(dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("periodosNaoLetivos:eliminar", async (_, id) => {
+    try {
+      return { success: true, data: eliminarPeriodoNaoLetivo(id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   electron.ipcMain.handle("aulas:proximoNumero", async (_, turma_id) => {
     try {
       return { success: true, data: proximoNumeroAula(turma_id) };
@@ -1101,6 +1387,90 @@ function registerHandlers() {
       const html = gerarHTMLRelatorioFinanceiro(dados, tipo, ano, mes, config || {});
       const nomeFicheiro = tipo === "mensal" ? `financeiro-${MESES_PT[mes - 1]}-${ano}.pdf` : `financeiro-anual-${ano}.pdf`;
       return await imprimirPDF(html, nomeFicheiro);
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("instituicoes:listar", async () => {
+    try {
+      return { success: true, data: listarInstituicoes() };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("instituicoes:criar", async (_, dados) => {
+    try {
+      return { success: true, data: criarInstituicao(dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("instituicoes:editar", async (_, { id, dados }) => {
+    try {
+      return { success: true, data: editarInstituicao(id, dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("instituicoes:eliminar", async (_, id) => {
+    try {
+      return { success: true, data: eliminarInstituicao(id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("cursos:listar", async (_, instituicao_id) => {
+    try {
+      return { success: true, data: listarCursos(instituicao_id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("cursos:criar", async (_, dados) => {
+    try {
+      return { success: true, data: criarCurso(dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("cursos:editar", async (_, { id, dados }) => {
+    try {
+      return { success: true, data: editarCurso(id, dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("cursos:eliminar", async (_, id) => {
+    try {
+      return { success: true, data: eliminarCurso(id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("outrosRendimentos:listar", async (_, filtros) => {
+    try {
+      return { success: true, data: listarOutrosRendimentos(filtros) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("outrosRendimentos:criar", async (_, dados) => {
+    try {
+      return { success: true, data: criarOutroRendimento(dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("outrosRendimentos:editar", async (_, { id, dados }) => {
+    try {
+      return { success: true, data: editarOutroRendimento(id, dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("outrosRendimentos:eliminar", async (_, id) => {
+    try {
+      return { success: true, data: eliminarOutroRendimento(id) };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -1145,6 +1515,8 @@ function registerHandlers() {
 const __dirname$1 = path.dirname(url.fileURLToPath(require("url").pathToFileURL(__filename).href));
 let mainWindow;
 function createWindow() {
+  const isDev = !electron.app.isPackaged;
+  const iconPath = isDev ? path.join(__dirname$1, "../../build/icon.ico") : path.join(process.resourcesPath, "icon.ico");
   mainWindow = new electron.BrowserWindow({
     width: 1280,
     height: 720,
@@ -1158,9 +1530,9 @@ function createWindow() {
     },
     titleBarStyle: "default",
     show: false,
-    backgroundColor: "#f8fafc"
+    backgroundColor: "#f8fafc",
+    icon: iconPath
   });
-  const isDev = !electron.app.isPackaged;
   if (isDev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -1168,6 +1540,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname$1, "../renderer/index.html"));
   }
   mainWindow.once("ready-to-show", () => {
+    mainWindow.maximize();
     mainWindow.show();
   });
   mainWindow.on("closed", () => {
