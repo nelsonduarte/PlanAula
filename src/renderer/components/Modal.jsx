@@ -29,7 +29,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
       <div className={`relative w-full ${sizeClasses[size]} bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh]`}>

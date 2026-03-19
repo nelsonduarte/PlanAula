@@ -61,17 +61,17 @@ function gerarTemplate() {
 
   // ── Turmas ──
   const wsT = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'disciplina_nome *', 'data_inicio *', 'data_fim *'],
-    ['Turma A', 'Programação Web', '2025-09-15', '2026-01-31'],
-    ['Turma B', 'Programação Web', '2025-09-15', '2026-01-31'],
-    ['Turma A', 'Bases de Dados', '2025-09-15', '2026-01-31'],
+    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'semestre', 'sala'],
+    ['Turma A', 'Programação Web', '2025/2026', 1, 'Sala 101'],
+    ['Turma B', 'Programação Web', '2025/2026', 2, ''],
+    ['Turma A', 'Bases de Dados', '2025/2026', 1, 'Sala 203'],
   ])
-  wsT['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 14 }, { wch: 14 }]
+  wsT['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }]
   XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
 
   // ── Horários ──
   const wsH = XLSX.utils.aoa_to_sheet([
-    ['turma_nome *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *'],
+    ['turma_designacao *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *'],
     ['Turma A', 'Programação Web', 2, '09:00', '11:00'],
     ['Turma A', 'Programação Web', 4, '14:00', '16:00'],
     ['Turma B', 'Programação Web', 3, '10:00', '12:00'],
@@ -193,30 +193,30 @@ async function importarWorkbook(wb, setProgresso) {
   const rowsT = parseSheet(wb, 'Turmas')
   let turmas = await window.api.turmas.listar()
   for (const row of rowsT) {
-    const nome = norm(row, 'nome')
+    const designacao = norm(row, 'designacao')
     const discNome = norm(row, 'disciplina_nome')
-    const dataInicio = norm(row, 'data_inicio')
-    const dataFim = norm(row, 'data_fim')
-    if (!nome) continue
+    const anoLetivo = norm(row, 'ano_letivo') || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`
+    if (!designacao) continue
     const disc = disciplinas.find(d => d.nome === discNome)
     if (!disc) {
-      err(`Turma "${nome}": disciplina "${discNome}" não encontrada`)
+      err(`Turma "${designacao}": disciplina "${discNome}" não encontrada`)
       continue
     }
-    // check duplicate: same nome + disciplina_id
-    if (turmas.find(t => t.nome === nome && t.disciplina_id === disc.id)) {
-      ok(`Turma já existe: ${nome} (${discNome})`)
+    if (turmas.find(t => t.designacao === designacao && t.disciplina_id === disc.id)) {
+      ok(`Turma já existe: ${designacao} (${discNome})`)
       continue
     }
     try {
       await window.api.turmas.criar({
-        nome,
+        designacao,
         disciplina_id: disc.id,
-        data_inicio: dataInicio,
-        data_fim: dataFim,
+        ano_letivo: anoLetivo,
+        semestre: normNum(row, 'semestre', 1),
+        sala: norm(row, 'sala') || null,
+        cor: '#2E86C1',
       })
-      ok(`Turma criada: ${nome} (${discNome})`)
-    } catch (e) { err(`Turma "${nome}": ${e.message}`) }
+      ok(`Turma criada: ${designacao} (${discNome})`)
+    } catch (e) { err(`Turma "${designacao}": ${e.message}`) }
   }
   turmas = await window.api.turmas.listar()
 
@@ -224,24 +224,23 @@ async function importarWorkbook(wb, setProgresso) {
   info('A importar Horários…')
   const rowsH = parseSheet(wb, 'Horários')
   for (const row of rowsH) {
-    const turmaNome = norm(row, 'turma_nome')
+    const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
     const discNome = norm(row, 'disciplina_nome')
     const diaSemana = normNum(row, 'dia_semana', 1)
     const horaInicio = norm(row, 'hora_inicio') || '09:00'
     const horaFim = norm(row, 'hora_fim') || '11:00'
-    if (!turmaNome) continue
+    if (!turmaDesig) continue
 
-    // find turma by name + disciplina
     let turma
     if (discNome) {
       const disc = disciplinas.find(d => d.nome === discNome)
-      turma = turmas.find(t => t.nome === turmaNome && t.disciplina_id === disc?.id)
+      turma = turmas.find(t => t.designacao === turmaDesig && t.disciplina_id === disc?.id)
     } else {
-      turma = turmas.find(t => t.nome === turmaNome)
+      turma = turmas.find(t => t.designacao === turmaDesig)
     }
 
     if (!turma) {
-      err(`Horário: turma "${turmaNome}"${discNome ? ` (${discNome})` : ''} não encontrada`)
+      err(`Horário: turma "${turmaDesig}"${discNome ? ` (${discNome})` : ''} não encontrada`)
       continue
     }
     try {
@@ -251,8 +250,8 @@ async function importarWorkbook(wb, setProgresso) {
         hora_inicio: horaInicio,
         hora_fim: horaFim,
       })
-      ok(`Horário criado: ${turmaNome} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
-    } catch (e) { err(`Horário "${turmaNome}": ${e.message}`) }
+      ok(`Horário criado: ${turmaDesig} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
+    } catch (e) { err(`Horário "${turmaDesig}": ${e.message}`) }
   }
 
   return { log, erros }
@@ -280,7 +279,9 @@ export default function Importar() {
       const res = await importarWorkbook(wb, setProgresso)
       setResultado(res)
     } catch (err) {
-      setResultado({ log: [], erros: [`Erro ao ler ficheiro: ${err.message}`] })
+      const msg = `Erro: ${err.message}`
+      setProgresso(p => [...p, { tipo: 'err', msg }])
+      setResultado({ log: [], erros: [msg] })
     }
 
     setImporting(false)
@@ -328,8 +329,8 @@ export default function Importar() {
             { sheet: 'Instituições', campos: 'nome' },
             { sheet: 'Cursos', campos: 'nome, instituicao_nome' },
             { sheet: 'Disciplinas', campos: 'nome, codigo, carga_horaria, tipo, ects, descricao, curso_nome, instituicao_nome' },
-            { sheet: 'Turmas', campos: 'nome, disciplina_nome, data_inicio, data_fim' },
-            { sheet: 'Horários', campos: 'turma_nome, disciplina_nome, dia_semana (1–7), hora_inicio, hora_fim' },
+            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, semestre, sala' },
+            { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana (1–7), hora_inicio, hora_fim' },
           ].map(({ sheet, campos }) => (
             <div key={sheet} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
               <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{sheet}</p>
