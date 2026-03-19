@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const MESES_NOMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -20,6 +22,7 @@ function hoje() {
 
 export default function Financeiro() {
   const db = useDatabase()
+  const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
   const anoAtual = new Date().getFullYear()
   const mesAtual = new Date().getMonth() + 1
 
@@ -79,11 +82,14 @@ export default function Financeiro() {
   }
 
   async function salvarValorHora() {
+    if (!formValor.disciplina_id) { await alert('Seleccione a disciplina'); return }
+    const valor = parseFloat(formValor.valor_hora)
+    if (!valor || valor <= 0) { await alert('Introduza um valor/hora válido'); return }
     const ano_letivo = formValor.ano_letivo || `${anoAtual}/${anoAtual + 1}`
     await db.salvarValorHora({
       disciplina_id: parseInt(formValor.disciplina_id),
       turma_id: formValor.turma_id ? parseInt(formValor.turma_id) : null,
-      valor_hora: parseFloat(formValor.valor_hora),
+      valor_hora: valor,
       ano_letivo
     })
     await carregarTudo()
@@ -93,7 +99,7 @@ export default function Financeiro() {
 
   async function salvarOutroRendimento() {
     if (!formOutro.descricao || !formOutro.valor || !formOutro.data) {
-      alert('Preencha os campos obrigatórios')
+      await alert('Preencha os campos obrigatórios')
       return
     }
     const dados = { ...formOutro, valor: parseFloat(formOutro.valor) }
@@ -109,7 +115,7 @@ export default function Financeiro() {
   }
 
   async function handleEliminarOutro(id) {
-    if (!confirm('Eliminar este rendimento?')) return
+    if (!await confirm('Eliminar este rendimento?', { danger: true })) return
     await db.eliminarOutroRendimento(id)
     await carregarTudo()
   }
@@ -132,14 +138,14 @@ export default function Financeiro() {
     const cfg = await db.obterConfiguracoes()
     if (vista === 'mensal' && dadosMensais) {
       if (!dadosMensais.total_bruto && dadosMensais.itens?.length === 0) {
-        alert('Sem dados para exportar neste mês.')
+        await alert('Sem dados para exportar neste mês.')
         return
       }
       await db.exportarRelatorioFinanceiro(dadosMensais, 'mensal', anoSelecionado, mesSelecionado, cfg || {})
     } else if (vista === 'anual') {
       const temDados = dadosAnuais.some(m => m.total_bruto > 0)
       if (!temDados) {
-        alert('Sem dados financeiros para exportar neste ano.')
+        await alert('Sem dados financeiros para exportar neste ano.')
         return
       }
       await db.exportarRelatorioFinanceiro(dadosAnuais, 'anual', anoSelecionado, null, cfg || {})
@@ -760,6 +766,7 @@ export default function Financeiro() {
           </div>
         </div>
       </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

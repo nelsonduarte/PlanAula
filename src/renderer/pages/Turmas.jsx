@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const COR_PALETTE = [
   '#2E86C1', '#27AE60', '#E74C3C', '#F39C12', '#8E44AD',
@@ -15,11 +17,15 @@ const emptyForm = {
   ano_letivo: '',
   semestre: 1,
   sala: '',
-  cor: '#2E86C1'
+  cor: '#2E86C1',
+  data_inicio: '',
+  data_fim: '',
+  carga_horaria: 0,
 }
 
 export default function Turmas() {
   const db = useDatabase()
+  const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
   const [turmas, setTurmas] = useState([])
   const [disciplinas, setDisciplinas] = useState([])
   const [horarios, setHorarios] = useState({})
@@ -28,7 +34,7 @@ export default function Turmas() {
   const [editando, setEditando] = useState(null)
   const [turmaSelecionada, setTurmaSelecionada] = useState(null)
   const [form, setForm] = useState(emptyForm)
-  const [novosHorarios, setNovosHorarios] = useState([{ dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00' }])
+  const [novosHorarios, setNovosHorarios] = useState([{ dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00', sala: '' }])
   const [filtroDisc, setFiltroDisc] = useState('')
 
   useEffect(() => { carregarDados() }, [])
@@ -73,7 +79,7 @@ export default function Turmas() {
 
   async function salvar() {
     if (!form.disciplina_id || !form.designacao) {
-      alert('Preencha os campos obrigatórios')
+      await alert('Preencha os campos obrigatórios')
       return
     }
     const dados = {
@@ -96,8 +102,17 @@ export default function Turmas() {
   }
 
   async function eliminar(id) {
-    if (!confirm('Eliminar esta turma? Todas as aulas associadas serão eliminadas.')) return
+    if (!await confirm('Eliminar esta turma? Todas as aulas associadas serão eliminadas.', { danger: true })) return
     await db.eliminarTurma(id)
+    await carregarDados()
+  }
+
+  async function eliminarTodas() {
+    if (turmas.length === 0) return
+    if (!await confirm(`Eliminar todas as ${turmas.length} turma(s)? Todas as aulas associadas serão eliminadas. Esta ação não pode ser revertida.`, { danger: true })) return
+    for (const t of turmas) {
+      await db.eliminarTurma(t.id)
+    }
     await carregarDados()
   }
 
@@ -114,7 +129,7 @@ export default function Turmas() {
   }
 
   function adicionarHorario() {
-    setNovosHorarios(h => [...h, { dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00' }])
+    setNovosHorarios(h => [...h, { dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00', sala: '' }])
   }
 
   function removerHorario(idx) {
@@ -141,7 +156,12 @@ export default function Turmas() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="page-title">Turmas</h1>
-        <button onClick={abrirCriar} className="btn-primary">+ Nova Turma</button>
+        <div className="flex gap-2">
+          {turmas.length > 0 && (
+            <button onClick={eliminarTodas} className="btn-danger">Eliminar Todas</button>
+          )}
+          <button onClick={abrirCriar} className="btn-primary">+ Nova Turma</button>
+        </div>
       </div>
 
       {/* Filter */}
@@ -188,6 +208,13 @@ export default function Turmas() {
                       </div>
                     </div>
 
+                    {(turma.data_inicio || turma.data_fim) && (() => {
+                      const fmt = v => { if (!v) return '?'; const d = new Date(v + 'T12:00:00'); return isNaN(d) ? v : d.toLocaleDateString('pt-PT') }
+                      return <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{fmt(turma.data_inicio)} → {fmt(turma.data_fim)}</p>
+                    })()}
+                    {turma.carga_horaria > 0 && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">⏱ {turma.carga_horaria}h</p>
+                    )}
                     {turma.sala && (
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                         📍 Sala {turma.sala}
@@ -199,7 +226,7 @@ export default function Turmas() {
                       <div className="mb-3 space-y-1">
                         {horarios[turma.id].map(h => (
                           <p key={h.id} className="text-xs text-gray-500 dark:text-gray-400">
-                            📅 {DIAS_SEMANA[h.dia_semana]} {h.hora_inicio}–{h.hora_fim}
+                            📅 {DIAS_SEMANA[h.dia_semana]} {h.hora_inicio}–{h.hora_fim}{h.sala ? ` · ${h.sala}` : ''}
                           </p>
                         ))}
                       </div>
@@ -294,6 +321,34 @@ export default function Turmas() {
                 <option value={2}>2º Semestre</option>
               </select>
             </div>
+            <div>
+              <label className="label-field">Carga Horária (h)</label>
+              <input
+                type="number"
+                min="0"
+                value={form.carga_horaria || 0}
+                onChange={e => setForm(f => ({ ...f, carga_horaria: parseInt(e.target.value) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label-field">Data início</label>
+              <input
+                type="date"
+                value={form.data_inicio || ''}
+                onChange={e => setForm(f => ({ ...f, data_inicio: e.target.value }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label-field">Data fim</label>
+              <input
+                type="date"
+                value={form.data_fim || ''}
+                onChange={e => setForm(f => ({ ...f, data_fim: e.target.value }))}
+                className="input-field"
+              />
+            </div>
           </div>
 
           {/* Color picker */}
@@ -335,14 +390,21 @@ export default function Turmas() {
                       type="time"
                       value={h.hora_inicio}
                       onChange={e => atualizarHorario(idx, 'hora_inicio', e.target.value)}
-                      className="input-field w-28"
+                      className="input-field w-24"
                     />
                     <span className="text-gray-400">–</span>
                     <input
                       type="time"
                       value={h.hora_fim}
                       onChange={e => atualizarHorario(idx, 'hora_fim', e.target.value)}
-                      className="input-field w-28"
+                      className="input-field w-24"
+                    />
+                    <input
+                      type="text"
+                      value={h.sala || ''}
+                      onChange={e => atualizarHorario(idx, 'sala', e.target.value)}
+                      placeholder="Sala"
+                      className="input-field w-20"
                     />
                     {novosHorarios.length > 1 && (
                       <button onClick={() => removerHorario(idx)} className="text-red-500 hover:text-red-700 px-1">✕</button>
@@ -382,14 +444,21 @@ export default function Turmas() {
                 type="time"
                 value={h.hora_inicio}
                 onChange={e => atualizarHorario(idx, 'hora_inicio', e.target.value)}
-                className="input-field w-28"
+                className="input-field w-24"
               />
               <span className="text-gray-400">–</span>
               <input
                 type="time"
                 value={h.hora_fim}
                 onChange={e => atualizarHorario(idx, 'hora_fim', e.target.value)}
-                className="input-field w-28"
+                className="input-field w-24"
+              />
+              <input
+                type="text"
+                value={h.sala || ''}
+                onChange={e => atualizarHorario(idx, 'sala', e.target.value)}
+                placeholder="Sala"
+                className="input-field w-20"
               />
               <button onClick={() => removerHorario(idx)} className="text-red-500 hover:text-red-700 px-1">✕</button>
             </div>
@@ -399,6 +468,7 @@ export default function Turmas() {
           </button>
         </div>
       </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

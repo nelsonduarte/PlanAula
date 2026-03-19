@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const TIPOS_INSTITUICAO = ['universitária', 'politécnica', 'profissional', 'empresa', 'outra']
 const TIPOS_CURSO = ['semestral', 'anual', 'formação', 'livre']
@@ -17,6 +19,7 @@ const emptyCursoForm = { nome: '', tipo: 'semestral', ano_letivo: '', valor_hora
 
 export default function Cursos() {
   const db = useDatabase()
+  const { confirm, dialog, handleOk, handleCancel } = useDialog()
   const [instituicoes, setInstituicoes] = useState([])
   const [cursos, setCursos] = useState([])
   const [instSelecionada, setInstSelecionada] = useState(null)
@@ -65,7 +68,7 @@ export default function Cursos() {
     const aviso = cursosInst.length
       ? `Esta instituição tem ${cursosInst.length} curso(s) associado(s) que ficarão sem instituição. Continuar?`
       : `Eliminar "${inst.nome}"?`
-    if (!confirm(aviso)) return
+    if (!await confirm(aviso, { danger: true })) return
     await db.eliminarInstituicao(inst.id)
     if (instSelecionada?.id === inst.id) setInstSelecionada(null)
     await carregarTudo()
@@ -109,7 +112,7 @@ export default function Cursos() {
   }
 
   async function eliminarCurso(curso) {
-    if (!confirm(`Eliminar o curso "${curso.nome}"? As disciplinas associadas perderão a ligação.`)) return
+    if (!await confirm(`Eliminar o curso "${curso.nome}"? As disciplinas associadas perderão a ligação.`, { danger: true })) return
     await db.eliminarCurso(curso.id)
     await carregarTudo()
   }
@@ -429,6 +432,7 @@ export default function Cursos() {
           </div>
         </div>
       </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

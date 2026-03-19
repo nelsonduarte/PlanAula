@@ -135,6 +135,22 @@ export function runMigrations() {
     db.exec(`ALTER TABLE disciplinas ADD COLUMN curso_id INTEGER REFERENCES cursos(id) ON DELETE SET NULL`)
   }
 
+  const colunasHorarios = db.prepare(`PRAGMA table_info(horarios)`).all().map(c => c.name)
+  if (!colunasHorarios.includes('sala')) {
+    db.exec(`ALTER TABLE horarios ADD COLUMN sala TEXT`)
+  }
+
+  const colunasTurmas = db.prepare(`PRAGMA table_info(turmas)`).all().map(c => c.name)
+  if (!colunasTurmas.includes('data_inicio')) {
+    db.exec(`ALTER TABLE turmas ADD COLUMN data_inicio DATE`)
+  }
+  if (!colunasTurmas.includes('data_fim')) {
+    db.exec(`ALTER TABLE turmas ADD COLUMN data_fim DATE`)
+  }
+  if (!colunasTurmas.includes('carga_horaria')) {
+    db.exec(`ALTER TABLE turmas ADD COLUMN carga_horaria INTEGER NOT NULL DEFAULT 0`)
+  }
+
   // Insert default configurations if not present
   const stmt = db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)`)
   stmt.run('tema', 'light')

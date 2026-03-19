@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 const ESTADOS = ['Planeada', 'Realizada', 'Adiada', 'Cancelada']
 
 const estadoColors = {
@@ -19,6 +22,7 @@ const emptyForm = {
 
 export default function Aulas() {
   const db = useDatabase()
+  const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
   const [aulas, setAulas] = useState([])
   const [turmas, setTurmas] = useState([])
   const [disciplinas, setDisciplinas] = useState([])
@@ -30,6 +34,8 @@ export default function Aulas() {
   const [filtros, setFiltros] = useState({ turma_id: '', estado: '', data_inicio: '', data_fim: '' })
   const [gerarForm, setGerarForm] = useState({ turma_id: '', data_inicio: '', data_fim: '' })
   const [infoTurma, setInfoTurma] = useState(null) // { carga_horaria, horas_existentes }
+  const [resultadoGerar, setResultadoGerar] = useState(null) // { titulo, linhas, tipo }
+  const [horariosGerar, setHorariosGerar] = useState([])
   const [activeTab, setActiveTab] = useState('geral')
   const [configPerfil, setConfigPerfil] = useState({})
   const [exportando, setExportando] = useState(null)
@@ -106,11 +112,11 @@ export default function Aulas() {
 
   async function salvar() {
     if (!form.turma_id || !form.data) {
-      alert('Seleccione a turma e a data')
+      await alert('Seleccione a turma e a data')
       return
     }
     if (diasNaoLetivos.has(form.data)) {
-      alert('Não é possível criar uma aula nesta data — é um dia não letivo ou feriado.')
+      await alert('Não é possível criar uma aula nesta data — é um dia não letivo ou feriado.', { type: 'warning' })
       return
     }
     const dados = {
@@ -129,7 +135,7 @@ export default function Aulas() {
   }
 
   async function eliminar(id) {
-    if (!confirm('Eliminar esta aula?')) return
+    if (!await confirm('Eliminar esta aula?', { danger: true })) return
     await db.eliminarAula(id)
     await carregarComFiltros()
   }
@@ -139,7 +145,7 @@ export default function Aulas() {
     const confirmMsg = aulas.length === 1
       ? 'Eliminar 1 aula?'
       : `Eliminar ${aulas.length} aulas? Esta ação não pode ser desfeita.`
-    if (!confirm(confirmMsg)) return
+    if (!await confirm(confirmMsg, { danger: true })) return
     await Promise.all(aulas.map(a => db.eliminarAula(a.id)))
     await carregarComFiltros()
   }
@@ -156,13 +162,11 @@ export default function Aulas() {
   }
 
   async function carregarInfoTurma(turma_id) {
-    if (!turma_id) { setInfoTurma(null); return }
+    if (!turma_id) { setInfoTurma(null); setHorariosGerar([]); return }
     const turma = turmas.find(t => String(t.id) === String(turma_id))
     if (!turma) { setInfoTurma(null); return }
-    // Buscar carga_horaria via disciplinas já carregadas
+    const carga_horaria = turma.carga_horaria || 0
     const disc = disciplinas.find(d => d.id === turma.disciplina_id)
-    const carga_horaria = disc?.carga_horaria || 0
-    // Calcular horas já planeadas para esta turma
     const aulasExistentes = await db.listarAulas({ turma_id: parseInt(turma_id) })
     const horas_existentes = (aulasExistentes || []).reduce((sum, a) => {
       if (a.estado === 'Cancelada') return sum
@@ -171,11 +175,13 @@ export default function Aulas() {
       return sum + (hf * 60 + mf - hi * 60 - mi) / 60
     }, 0)
     setInfoTurma({ carga_horaria, horas_existentes, disciplina_nome: disc?.nome })
+    const hs = await db.listarHorarios(parseInt(turma_id))
+    setHorariosGerar(hs || [])
   }
 
   async function gerar() {
     if (!gerarForm.turma_id || !gerarForm.data_inicio || !gerarForm.data_fim) {
-      alert('Preencha todos os campos')
+      await alert('Preencha todos os campos')
       return
     }
     const resultado = await db.gerarAulasAutomatico(
@@ -184,31 +190,35 @@ export default function Aulas() {
       gerarForm.data_fim
     )
     if (!resultado) {
-      alert('Erro ao gerar aulas. Verifique se a turma tem horários definidos.')
+      await alert('Erro ao gerar aulas. Verifique se a turma tem horários definidos.', { type: 'error' })
       return
     }
     const { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido } = resultado
-    let msg = ''
+    const linhas = []
+    let tipo = 'success'
     if (aulas.length === 0) {
-      msg = 'Nenhuma nova aula criada. Todas as aulas para os horários definidos já existem neste período.'
+      linhas.push('Nenhuma nova aula criada.')
+      linhas.push('Todas as aulas para os horários definidos já existem neste período.')
+      tipo = 'info'
     } else {
-      msg = `${aulas.length} aula(s) gerada(s) (${horas_geradas.toFixed(1)}h).`
+      linhas.push(`${aulas.length} aula(s) gerada(s) — ${horas_geradas.toFixed(1)}h`)
       if (carga_horaria > 0) {
         const totalAgora = horas_existentes + horas_geradas
+        const faltam = carga_horaria - totalAgora
         if (limite_atingido) {
-          msg += `\n\nCarga horária atingida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h. A geração foi interrompida para não exceder o limite.`
+          linhas.push(`Carga horária atingida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h`)
+          tipo = 'success'
+        } else if (faltam > 0.05) {
+          linhas.push(`Total planeado: ${totalAgora.toFixed(1)}h / ${carga_horaria}h`)
+          linhas.push(`Faltam ${faltam.toFixed(1)}h — amplie o intervalo ou adicione mais slots ao horário.`)
+          tipo = 'warning'
         } else {
-          const faltam = carga_horaria - totalAgora
-          if (faltam > 0.05) {
-            msg += `\n\nTotal planeado: ${totalAgora.toFixed(1)}h / ${carga_horaria}h. Faltam ${faltam.toFixed(1)}h para atingir a carga horária.`
-          } else {
-            msg += `\n\nCarga horária cumprida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h.`
-          }
+          linhas.push(`Carga horária cumprida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h`)
         }
       }
     }
-    alert(msg)
     setModalGerar(false)
+    setResultadoGerar({ linhas, tipo })
     await carregarComFiltros()
   }
 
@@ -597,12 +607,12 @@ export default function Aulas() {
       {/* Modal geração automática */}
       <Modal
         isOpen={modalGerar}
-        onClose={() => { setModalGerar(false); setInfoTurma(null) }}
+        onClose={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]) }}
         title="Gerar Aulas Automaticamente"
         size="md"
         footer={
           <>
-            <button onClick={() => { setModalGerar(false); setInfoTurma(null) }} className="btn-secondary">Cancelar</button>
+            <button onClick={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]) }} className="btn-secondary">Cancelar</button>
             <button onClick={gerar} className="btn-primary">Gerar</button>
           </>
         }
@@ -616,7 +626,13 @@ export default function Aulas() {
             <select
               value={gerarForm.turma_id}
               onChange={e => {
-                setGerarForm(f => ({ ...f, turma_id: e.target.value }))
+                const turma = turmas.find(t => String(t.id) === e.target.value)
+                setGerarForm(f => ({
+                  ...f,
+                  turma_id: e.target.value,
+                  data_inicio: turma?.data_inicio || f.data_inicio,
+                  data_fim: turma?.data_fim || f.data_fim,
+                }))
                 carregarInfoTurma(e.target.value)
               }}
               className="input-field"
@@ -667,11 +683,64 @@ export default function Aulas() {
               />
             </div>
           </div>
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
-            ℹ️ Apenas serão criadas aulas em datas com horário definido. Aulas já existentes não serão duplicadas.
-          </div>
+          {horariosGerar.length > 0 ? (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+              <p className="font-medium mb-1">Horários desta turma:</p>
+              <ul className="space-y-0.5">
+                {horariosGerar.map(h => (
+                  <li key={h.id}>
+                    {DIAS_SEMANA[parseInt(h.dia_semana)]} — {h.hora_inicio}–{h.hora_fim}{h.sala ? ` (${h.sala})` : ''}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs opacity-75">Aulas já existentes não serão duplicadas.</p>
+            </div>
+          ) : gerarForm.turma_id ? (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-300">
+              ⚠️ Esta turma não tem horários definidos. Configure os horários na página de Turmas.
+            </div>
+          ) : (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+              ℹ️ Apenas serão criadas aulas em datas com horário definido. Aulas já existentes não serão duplicadas.
+            </div>
+          )}
         </div>
       </Modal>
+
+      {/* Modal resultado da geração */}
+      <Modal
+        isOpen={!!resultadoGerar}
+        onClose={() => setResultadoGerar(null)}
+        title="Geração Concluída"
+        size="sm"
+        footer={
+          <button onClick={() => setResultadoGerar(null)} className="btn-primary w-full">OK</button>
+        }
+      >
+        {resultadoGerar && (
+          <div className={`rounded-xl p-4 flex gap-3 ${
+            resultadoGerar.tipo === 'warning'
+              ? 'bg-yellow-50 dark:bg-yellow-900/20'
+              : resultadoGerar.tipo === 'info'
+              ? 'bg-blue-50 dark:bg-blue-900/20'
+              : 'bg-green-50 dark:bg-green-900/20'
+          }`}>
+            <span className="text-xl flex-shrink-0 mt-0.5">
+              {resultadoGerar.tipo === 'warning' ? '⚠️' : resultadoGerar.tipo === 'info' ? 'ℹ️' : '✅'}
+            </span>
+            <div className="space-y-1">
+              {resultadoGerar.linhas.map((l, i) => (
+                <p key={i} className={`text-sm ${
+                  i === 0
+                    ? 'font-semibold text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}>{l}</p>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

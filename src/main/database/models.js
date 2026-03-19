@@ -85,8 +85,8 @@ export function eliminarModulo(id) {
 export function criarTurma(dados) {
   const db = getDb()
   const stmt = db.prepare(`
-    INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor)
-    VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor)
+    INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor, data_inicio, data_fim, carga_horaria)
+    VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor, @data_inicio, @data_fim, @carga_horaria)
   `)
   const result = stmt.run(dados)
   return { id: result.lastInsertRowid, ...dados }
@@ -122,7 +122,8 @@ export function editarTurma(id, dados) {
   const db = getDb()
   db.prepare(`
     UPDATE turmas SET disciplina_id=@disciplina_id, designacao=@designacao,
-      ano_letivo=@ano_letivo, semestre=@semestre, sala=@sala, cor=@cor
+      ano_letivo=@ano_letivo, semestre=@semestre, sala=@sala, cor=@cor,
+      data_inicio=@data_inicio, data_fim=@data_fim, carga_horaria=@carga_horaria
     WHERE id=@id
   `).run({ ...dados, id })
   return buscarTurma(id)
@@ -139,8 +140,8 @@ export function eliminarTurma(id) {
 export function criarHorario(dados) {
   const db = getDb()
   const stmt = db.prepare(`
-    INSERT INTO horarios (turma_id, dia_semana, hora_inicio, hora_fim)
-    VALUES (@turma_id, @dia_semana, @hora_inicio, @hora_fim)
+    INSERT INTO horarios (turma_id, dia_semana, hora_inicio, hora_fim, sala)
+    VALUES (@turma_id, @dia_semana, @hora_inicio, @hora_fim, @sala)
   `)
   const result = stmt.run(dados)
   return { id: result.lastInsertRowid, ...dados }
@@ -157,7 +158,7 @@ export function listarHorarios(turma_id) {
 export function editarHorario(id, dados) {
   const db = getDb()
   db.prepare(`
-    UPDATE horarios SET dia_semana=@dia_semana, hora_inicio=@hora_inicio, hora_fim=@hora_fim WHERE id=@id
+    UPDATE horarios SET dia_semana=@dia_semana, hora_inicio=@hora_inicio, hora_fim=@hora_fim, sala=@sala WHERE id=@id
   `).run({ ...dados, id })
   return db.prepare('SELECT * FROM horarios WHERE id = ?').get(id)
 }
@@ -290,9 +291,8 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const horarios = listarHorarios(turma_id)
   if (!horarios.length) throw new Error('Sem horários definidos para esta turma')
 
-  // Carga horária da disciplina
-  const disciplina = db.prepare('SELECT carga_horaria FROM disciplinas WHERE id = ?').get(turma.disciplina_id)
-  const carga_horaria = disciplina?.carga_horaria || 0
+  // Carga horária da turma (com fallback para a disciplina)
+  const carga_horaria = turma.carga_horaria || 0
 
   // Horas já planeadas para esta turma (excluindo canceladas)
   const rowExistentes = db.prepare(`
@@ -338,8 +338,9 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
     const cur = new Date(Math.max(new Date(p.data_inicio), new Date(data_inicio)))
     const fim = new Date(Math.min(new Date(p.data_fim), new Date(data_fim)))
     while (cur <= fim) {
-      diasNaoLetivos.add(cur.toISOString().split('T')[0])
-      cur.setDate(cur.getDate() + 1)
+      const y = cur.getUTCFullYear(), m = String(cur.getUTCMonth()+1).padStart(2,'0'), d = String(cur.getUTCDate()).padStart(2,'0')
+      diasNaoLetivos.add(`${y}-${m}-${d}`)
+      cur.setUTCDate(cur.getUTCDate() + 1)
     }
   }
 
@@ -347,22 +348,23 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const end = new Date(data_fim)
   const aulas = []
   let horas_geradas = 0
-  let limite_atingido = false
+  let parar = false
 
   const current = new Date(start)
-  while (current <= end) {
-    const dataStr = current.toISOString().split('T')[0]
+  while (current <= end && !parar) {
+    const y = current.getUTCFullYear(), mo = String(current.getUTCMonth()+1).padStart(2,'0'), d = String(current.getUTCDate()).padStart(2,'0')
+    const dataStr = `${y}-${mo}-${d}`
 
     if (!diasNaoLetivos.has(dataStr)) {
-      const diaSemana = current.getDay()
-      const horariosHoje = horarios.filter(h => h.dia_semana === diaSemana)
+      const diaSemana = current.getUTCDay()
+      const horariosHoje = horarios.filter(h => parseInt(h.dia_semana) === diaSemana)
 
       for (const h of horariosHoje) {
         const duracaoSlot = slotHoras(h)
 
-        // Verificar se ultrapassa a carga horária
-        if (horas_disponiveis !== Infinity && horas_geradas + duracaoSlot > horas_disponiveis + 0.001) {
-          limite_atingido = true
+        // Não adicionar se exceder a carga horária (exact match é permitido)
+        if (carga_horaria > 0 && horas_existentes + horas_geradas + duracaoSlot > carga_horaria) {
+          parar = true
           break
         }
 
@@ -380,14 +382,18 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
           })
           aulas.push(a)
           horas_geradas += duracaoSlot
+          if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
+            parar = true
+            break
+          }
         }
       }
     }
 
-    if (limite_atingido) break
-    current.setDate(current.getDate() + 1)
+    current.setUTCDate(current.getUTCDate() + 1)
   }
 
+  const limite_atingido = carga_horaria > 0 && (horas_existentes + horas_geradas) >= carga_horaria
   return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido }
 }
 
@@ -836,7 +842,7 @@ export function obterEstatisticas(ano_letivo) {
 
   // Horas por disciplina
   const porDisciplina = db.prepare(`
-    SELECT d.nome as disciplina_nome, d.cor,
+    SELECT d.nome as disciplina_nome,
            COUNT(a.id) as total_aulas,
            SUM((strftime('%H', a.hora_fim) * 60 + strftime('%M', a.hora_fim) -
                 strftime('%H', a.hora_inicio) * 60 - strftime('%M', a.hora_inicio)) / 60.0) as total_horas

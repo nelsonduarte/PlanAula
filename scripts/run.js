@@ -26,8 +26,10 @@ if (fs.existsSync(ASAR_PATH)) {
     // Extrair asar atual para preservar node_modules
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true })
     asar.extractAll(ASAR_PATH, tmpDir)
-    // Copiar novos dist files
-    copyDir(path.join(ROOT, 'dist'), path.join(tmpDir, 'dist'))
+    // Substituir dist completamente (apagar o antigo primeiro)
+    const tmpDist = path.join(tmpDir, 'dist')
+    if (fs.existsSync(tmpDist)) fs.rmSync(tmpDist, { recursive: true })
+    copyDir(path.join(ROOT, 'dist'), tmpDist)
     // Reempacotar
     asar.createPackage(tmpDir, ASAR_PATH).then(() => {
       fs.rmSync(tmpDir, { recursive: true })

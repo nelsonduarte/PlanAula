@@ -1,6 +1,16 @@
 import React, { useState } from 'react'
 import * as XLSX from 'xlsx'
 
+// IPC handlers retornam { success, data } — este helper extrai data ou lança erro
+async function ipc(fn) {
+  const res = await fn()
+  if (res && res.success !== undefined) {
+    if (!res.success) throw new Error(res.error || 'Erro desconhecido')
+    return res.data
+  }
+  return res // alguns handlers retornam directamente o valor
+}
+
 // ─── Template Download ────────────────────────────────────────────────────────
 
 function gerarTemplate() {
@@ -13,8 +23,8 @@ function gerarTemplate() {
     ['INSTRUÇÕES:'],
     ['1. Preencha cada folha com os seus dados (não altere os cabeçalhos).'],
     ['2. Campos marcados com * são obrigatórios.'],
-    ['3. Datas no formato AAAA-MM-DD (ex: 2025-09-01).'],
-    ['4. Dia da semana: 1=Segunda  2=Terça  3=Quarta  4=Quinta  5=Sexta  6=Sábado  7=Domingo.'],
+    ['3. Datas: aceita AAAA-MM-DD (2025-09-01), DD-MM-AAAA (01-09-2025) ou o formato de data do Excel.'],
+    ['4. Dia da semana: 0=Domingo  1=Segunda  2=Terça  3=Quarta  4=Quinta  5=Sexta  6=Sábado.'],
     ['5. Horas no formato HH:MM (ex: 09:00).'],
     [''],
     ['ORDEM DE IMPORTAÇÃO (os nomes devem corresponder EXACTAMENTE):'],
@@ -42,40 +52,40 @@ function gerarTemplate() {
 
   // ── Cursos ──
   const wsC = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'instituicao_nome *'],
-    ['Engenharia Informática', 'Universidade do Porto'],
-    ['Gestão e Administração', 'Instituto Politécnico de Coimbra'],
+    ['nome *', 'instituicao_nome *', 'ano_letivo', 'valor_hora'],
+    ['Engenharia Informática', 'Universidade do Porto', '2025/2026', 25],
+    ['Gestão e Administração', 'Instituto Politécnico de Coimbra', '2025/2026', 20],
   ])
-  wsC['!cols'] = [{ wch: 35 }, { wch: 35 }]
+  wsC['!cols'] = [{ wch: 35 }, { wch: 35 }, { wch: 12 }, { wch: 12 }]
   XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
 
   // ── Disciplinas ──
   const wsD = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'codigo', 'carga_horaria *', 'tipo', 'ects', 'descricao', 'curso_nome *', 'instituicao_nome *'],
-    ['Programação Web', 'PW101', 60, 'Teórica', 6, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Bases de Dados', 'BD102', 45, 'Teórico-Prática', 4, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Gestão de Projetos', 'GP201', 30, 'Seminário', 3, '', 'Gestão e Administração', 'Instituto Politécnico de Coimbra'],
+    ['nome *', 'codigo', 'tipo', 'ects', 'descricao', 'curso_nome *', 'instituicao_nome *'],
+    ['Programação Web', 'PW101', 'Teórica', 6, '', 'Engenharia Informática', 'Universidade do Porto'],
+    ['Bases de Dados', 'BD102', 'Teórico-Prática', 4, '', 'Engenharia Informática', 'Universidade do Porto'],
+    ['Gestão de Projetos', 'GP201', 'Seminário', 3, '', 'Gestão e Administração', 'Instituto Politécnico de Coimbra'],
   ])
-  wsD['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 6 }, { wch: 20 }, { wch: 28 }, { wch: 35 }]
+  wsD['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 6 }, { wch: 20 }, { wch: 28 }, { wch: 35 }]
   XLSX.utils.book_append_sheet(wb, wsD, 'Disciplinas')
 
   // ── Turmas ──
   const wsT = XLSX.utils.aoa_to_sheet([
-    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'semestre', 'sala'],
-    ['Turma A', 'Programação Web', '2025/2026', 1, 'Sala 101'],
-    ['Turma B', 'Programação Web', '2025/2026', 2, ''],
-    ['Turma A', 'Bases de Dados', '2025/2026', 1, 'Sala 203'],
+    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre'],
+    ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1],
+    ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2],
+    ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1],
   ])
-  wsT['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }]
+  wsT['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }]
   XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
 
   // ── Horários ──
   const wsH = XLSX.utils.aoa_to_sheet([
-    ['turma_designacao *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *'],
-    ['Turma A', 'Programação Web', 2, '09:00', '11:00'],
-    ['Turma A', 'Programação Web', 4, '14:00', '16:00'],
-    ['Turma B', 'Programação Web', 3, '10:00', '12:00'],
-    ['Turma A', 'Bases de Dados', 5, '09:00', '11:00'],
+    ['turma_designacao *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *', 'sala'],
+    ['Turma A', 'Programação Web', 2, '09:00', '11:00', 'Sala 101'],
+    ['Turma A', 'Programação Web', 4, '14:00', '16:00', 'Sala 101'],
+    ['Turma B', 'Programação Web', 3, '10:00', '12:00', 'Sala 203'],
+    ['Turma A', 'Bases de Dados', 5, '09:00', '11:00', 'Sala 205'],
   ])
   wsH['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 14 }, { wch: 13 }, { wch: 13 }]
   XLSX.utils.book_append_sheet(wb, wsH, 'Horários')
@@ -103,6 +113,38 @@ function normNum(row, key, def = 0) {
   return v === '' ? def : Number(v)
 }
 
+// Excel guarda datas como número serial (dias desde 1899-12-30)
+// Também aceita strings dd-mm-yyyy, dd/mm/yyyy e yyyy-mm-dd
+function normDate(row, key) {
+  const raw = row[key] ?? row[key + ' *']
+  if (typeof raw === 'number' && raw > 0) {
+    const d = new Date((raw - 25569) * 86400 * 1000)
+    const yyyy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+  const v = (norm(row, key) || '').trim()
+  if (!v) return ''
+  // dd-mm-yyyy ou dd/mm/yyyy → yyyy-mm-dd
+  const m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  return v // assume já está em yyyy-mm-dd
+}
+
+// Excel guarda horas como fracção decimal do dia (ex: 09:30 → 0.395833...)
+function normTime(row, key, def = '09:00') {
+  const raw = row[key] ?? row[key + ' *']
+  if (typeof raw === 'number') {
+    const totalMin = Math.round(raw * 24 * 60)
+    const h = Math.floor(totalMin / 60)
+    const m = totalMin % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  const v = norm(row, key)
+  return v || def
+}
+
 // ─── Import Logic ─────────────────────────────────────────────────────────────
 
 async function importarWorkbook(wb, setProgresso) {
@@ -116,7 +158,7 @@ async function importarWorkbook(wb, setProgresso) {
   // ── Instituições ──
   info('A importar Instituições…')
   const rowsI = parseSheet(wb, 'Instituições')
-  let instituicoes = await window.api.instituicoes.listar()
+  let instituicoes = await ipc(() => window.api.instituicoes.listar())
   for (const row of rowsI) {
     const nome = norm(row, 'nome')
     if (!nome) continue
@@ -125,16 +167,16 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
-      await window.api.instituicoes.criar({ nome })
+      await ipc(() => window.api.instituicoes.criar({ nome, tipo: 'universitária', contacto: null, notas: null }))
       ok(`Instituição criada: ${nome}`)
     } catch (e) { err(`Instituição "${nome}": ${e.message}`) }
   }
-  instituicoes = await window.api.instituicoes.listar()
+  instituicoes = await ipc(() => window.api.instituicoes.listar())
 
   // ── Cursos ──
   info('A importar Cursos…')
   const rowsC = parseSheet(wb, 'Cursos')
-  let cursos = await window.api.cursos.listar()
+  let cursos = await ipc(() => window.api.cursos.listar())
   for (const row of rowsC) {
     const nome = norm(row, 'nome')
     const instNome = norm(row, 'instituicao_nome')
@@ -149,16 +191,24 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
-      await window.api.cursos.criar({ nome, instituicao_id: inst?.id || null })
+      await ipc(() => window.api.cursos.criar({
+        nome,
+        instituicao_id: inst?.id || null,
+        tipo: 'semestral',
+        ano_letivo: norm(row, 'ano_letivo') || null,
+        valor_hora: normNum(row, 'valor_hora') || null,
+        descricao: null,
+        ativo: 1,
+      }))
       ok(`Curso criado: ${nome}`)
     } catch (e) { err(`Curso "${nome}": ${e.message}`) }
   }
-  cursos = await window.api.cursos.listar()
+  cursos = await ipc(() => window.api.cursos.listar())
 
   // ── Disciplinas ──
   info('A importar Disciplinas…')
   const rowsD = parseSheet(wb, 'Disciplinas')
-  let disciplinas = await window.api.disciplinas.listar()
+  let disciplinas = await ipc(() => window.api.disciplinas.listar())
   for (const row of rowsD) {
     const nome = norm(row, 'nome')
     const cursoNome = norm(row, 'curso_nome')
@@ -173,25 +223,27 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
-      await window.api.disciplinas.criar({
+      // leitura directa como fallback ao norm (headers sem asterisco)
+      const tipo = norm(row, 'tipo') || row['tipo'] || 'Teórica'
+      await ipc(() => window.api.disciplinas.criar({
         nome,
-        codigo: norm(row, 'codigo'),
+        codigo: norm(row, 'codigo') || null,
         area_cientifica: '',
-        carga_horaria: normNum(row, 'carga_horaria'),
+        carga_horaria: 0,
         ects: normNum(row, 'ects'),
-        tipo: norm(row, 'tipo') || 'Teórica',
-        descricao: norm(row, 'descricao'),
+        tipo,
+        descricao: norm(row, 'descricao') || null,
         curso_id: curso?.id || null,
-      })
+      }))
       ok(`Disciplina criada: ${nome}`)
     } catch (e) { err(`Disciplina "${nome}": ${e.message}`) }
   }
-  disciplinas = await window.api.disciplinas.listar()
+  disciplinas = await ipc(() => window.api.disciplinas.listar())
 
   // ── Turmas ──
   info('A importar Turmas…')
   const rowsT = parseSheet(wb, 'Turmas')
-  let turmas = await window.api.turmas.listar()
+  let turmas = await ipc(() => window.api.turmas.listar())
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
     const discNome = norm(row, 'disciplina_nome')
@@ -202,23 +254,42 @@ async function importarWorkbook(wb, setProgresso) {
       err(`Turma "${designacao}": disciplina "${discNome}" não encontrada`)
       continue
     }
-    if (turmas.find(t => t.designacao === designacao && t.disciplina_id === disc.id)) {
-      ok(`Turma já existe: ${designacao} (${discNome})`)
+    const turmaExistente = turmas.find(t => t.designacao === designacao && t.disciplina_id === disc.id)
+    if (turmaExistente) {
+      // actualizar datas se estiverem em falta
+      const dataInicio = normDate(row, 'data_inicio') || null
+      const dataFim = normDate(row, 'data_fim') || null
+      const dataValida = v => v && /^\d{4}-\d{2}-\d{2}$/.test(v)
+      if ((dataInicio && !dataValida(turmaExistente.data_inicio)) || (dataFim && !dataValida(turmaExistente.data_fim))) {
+        try {
+          await ipc(() => window.api.turmas.editar(turmaExistente.id, {
+            ...turmaExistente,
+            data_inicio: dataInicio || turmaExistente.data_inicio,
+            data_fim: dataFim || turmaExistente.data_fim,
+          }))
+          ok(`Turma actualizada (datas): ${designacao} (${discNome})`)
+        } catch (e) { ok(`Turma já existe: ${designacao} (${discNome})`) }
+      } else {
+        ok(`Turma já existe: ${designacao} (${discNome})`)
+      }
       continue
     }
     try {
-      await window.api.turmas.criar({
+      await ipc(() => window.api.turmas.criar({
         designacao,
         disciplina_id: disc.id,
         ano_letivo: anoLetivo,
         semestre: normNum(row, 'semestre', 1),
-        sala: norm(row, 'sala') || null,
+        sala: null,
+        data_inicio: normDate(row, 'data_inicio') || null,
+        data_fim: normDate(row, 'data_fim') || null,
+        carga_horaria: normNum(row, 'carga_horaria', 0),
         cor: '#2E86C1',
-      })
+      }))
       ok(`Turma criada: ${designacao} (${discNome})`)
     } catch (e) { err(`Turma "${designacao}": ${e.message}`) }
   }
-  turmas = await window.api.turmas.listar()
+  turmas = await ipc(() => window.api.turmas.listar())
 
   // ── Horários ──
   info('A importar Horários…')
@@ -227,8 +298,8 @@ async function importarWorkbook(wb, setProgresso) {
     const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
     const discNome = norm(row, 'disciplina_nome')
     const diaSemana = normNum(row, 'dia_semana', 1)
-    const horaInicio = norm(row, 'hora_inicio') || '09:00'
-    const horaFim = norm(row, 'hora_fim') || '11:00'
+    const horaInicio = normTime(row, 'hora_inicio')
+    const horaFim = normTime(row, 'hora_fim', '11:00')
     if (!turmaDesig) continue
 
     let turma
@@ -244,12 +315,32 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
-      await window.api.horarios.criar({
+      // verificar se já existe horário com mesmo dia e hora de início
+      const horariosExistentes = await ipc(() => window.api.horarios.listar(turma.id))
+      const salaImport = norm(row, 'sala') || null
+      const jaExiste = horariosExistentes.find(h => h.dia_semana === diaSemana && h.hora_inicio === horaInicio)
+      if (jaExiste) {
+        // Atualizar sala e hora_fim se forem diferentes
+        if (jaExiste.sala !== salaImport || jaExiste.hora_fim !== horaFim) {
+          await ipc(() => window.api.horarios.editar(jaExiste.id, {
+            dia_semana: diaSemana,
+            hora_inicio: horaInicio,
+            hora_fim: horaFim,
+            sala: salaImport,
+          }))
+          ok(`Horário atualizado: ${turmaDesig} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
+        } else {
+          ok(`Horário já existe: ${turmaDesig} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
+        }
+        continue
+      }
+      await ipc(() => window.api.horarios.criar({
         turma_id: turma.id,
         dia_semana: diaSemana,
         hora_inicio: horaInicio,
         hora_fim: horaFim,
-      })
+        sala: salaImport,
+      }))
       ok(`Horário criado: ${turmaDesig} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
     } catch (e) { err(`Horário "${turmaDesig}": ${e.message}`) }
   }
@@ -298,26 +389,62 @@ export default function Importar() {
         Importe disciplinas, turmas e horários em massa a partir de um ficheiro Excel.
       </p>
 
-      {/* Step 1 — Download template */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-5 mb-5">
-        <div className="flex items-start gap-3">
-          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</div>
-          <div className="flex-1">
-            <h2 className="font-semibold text-blue-800 dark:text-blue-300 mb-0.5">Descarregar Template</h2>
-            <p className="text-sm text-blue-700 dark:text-blue-400 mb-3">
-              Descarregue o ficheiro Excel, preencha-o com os seus dados e volte aqui para importar.
-              O ficheiro inclui exemplos e instruções em cada folha.
-            </p>
-            <button
-              onClick={gerarTemplate}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      {/* Export + Import actions */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden mb-5">
+        {/* Export */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-600 dark:text-blue-400">
                 <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              Descarregar PlanAula_Template.xlsx
-            </button>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Exportar Template</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Descarregue o ficheiro Excel com exemplos e instruções</p>
+            </div>
           </div>
+          <button
+            onClick={gerarTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Descarregar .xlsx
+          </button>
+        </div>
+
+        {/* Import */}
+        <div className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-green-600 dark:text-green-400">
+                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Importar Ficheiro</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Selecione o Excel preenchido — registos existentes são ignorados</p>
+            </div>
+          </div>
+          <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex-shrink-0 ${
+            importing
+              ? 'bg-gray-400 dark:bg-gray-600 text-white cursor-not-allowed'
+              : 'bg-green-600 hover:bg-green-700 text-white'
+          }`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {importing ? 'A importar…' : 'Selecionar .xlsx'}
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFile}
+              disabled={importing}
+              className="hidden"
+            />
+          </label>
         </div>
       </div>
 
@@ -327,10 +454,10 @@ export default function Importar() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           {[
             { sheet: 'Instituições', campos: 'nome' },
-            { sheet: 'Cursos', campos: 'nome, instituicao_nome' },
-            { sheet: 'Disciplinas', campos: 'nome, codigo, carga_horaria, tipo, ects, descricao, curso_nome, instituicao_nome' },
-            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, semestre, sala' },
-            { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana (1–7), hora_inicio, hora_fim' },
+            { sheet: 'Cursos', campos: 'nome, instituicao_nome, ano_letivo, valor_hora' },
+            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, ects, descricao, curso_nome, instituicao_nome' },
+            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre' },
+            { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana, hora_inicio, hora_fim, sala' },
           ].map(({ sheet, campos }) => (
             <div key={sheet} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
               <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{sheet}</p>
@@ -339,38 +466,8 @@ export default function Importar() {
           ))}
         </div>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
-          Dias da semana: 1=Segunda · 2=Terça · 3=Quarta · 4=Quinta · 5=Sexta · 6=Sábado · 7=Domingo
+          Dias da semana: 0=Domingo · 1=Segunda · 2=Terça · 3=Quarta · 4=Quinta · 5=Sexta · 6=Sábado
         </p>
-      </div>
-
-      {/* Step 2 — Upload */}
-      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-5 mb-5">
-        <div className="flex items-start gap-3">
-          <div className="w-7 h-7 rounded-full bg-gray-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</div>
-          <div className="flex-1">
-            <h2 className="font-semibold text-gray-800 dark:text-gray-200 mb-0.5">Importar Ficheiro</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-              Selecione o ficheiro Excel preenchido. Registos já existentes são ignorados automaticamente.
-            </p>
-            <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-              importing
-                ? 'bg-gray-400 dark:bg-gray-600 text-white cursor-not-allowed'
-                : 'bg-gray-700 hover:bg-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 text-white'
-            }`}>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              {importing ? 'A importar…' : 'Selecionar ficheiro .xlsx'}
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFile}
-                disabled={importing}
-                className="hidden"
-              />
-            </label>
-          </div>
-        </div>
       </div>
 
       {/* Progress / Results */}

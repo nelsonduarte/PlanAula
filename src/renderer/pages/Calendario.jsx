@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const DIAS_SEMANA_CURTO = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
@@ -15,8 +17,13 @@ const estadoColors = {
 
 const TIPOS_PERIODO = ['férias', 'interrupção letiva', 'feriado escolar', 'outro']
 
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
 export default function Calendario() {
   const db = useDatabase()
+  const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
   const [aulas, setAulas] = useState([])
   const [diasNaoLetivos, setDiasNaoLetivos] = useState({})
   const [vista, setVista] = useState('mensal')
@@ -31,7 +38,7 @@ export default function Calendario() {
   const [periodoForm, setPeriodoForm] = useState({ instituicao_id: '', descricao: '', data_inicio: '', data_fim: '', tipo: 'férias' })
 
   const hoje = new Date()
-  const hojeStr = hoje.toISOString().split('T')[0]
+  const hojeStr = toDateStr(hoje)
 
   useEffect(() => { carregarDados() }, [dataAtual, vista])
 
@@ -40,8 +47,8 @@ export default function Calendario() {
     if (vista === 'mensal') {
       const ano = dataAtual.getFullYear()
       const mes = dataAtual.getMonth()
-      data_inicio = new Date(ano, mes, 1).toISOString().split('T')[0]
-      data_fim = new Date(ano, mes + 1, 0).toISOString().split('T')[0]
+      data_inicio = toDateStr(new Date(ano, mes, 1))
+      data_fim = toDateStr(new Date(ano, mes + 1, 0))
     } else {
       const start = new Date(dataAtual)
       const day = start.getDay()
@@ -49,8 +56,8 @@ export default function Calendario() {
       start.setDate(start.getDate() + diff)
       const end = new Date(start)
       end.setDate(start.getDate() + 6)
-      data_inicio = start.toISOString().split('T')[0]
-      data_fim = end.toISOString().split('T')[0]
+      data_inicio = toDateStr(start)
+      data_fim = toDateStr(end)
     }
 
     const [aulasData, feriadosData, periodosData, instData] = await Promise.all([
@@ -96,11 +103,11 @@ export default function Calendario() {
 
   async function criarPeriodo() {
     if (!periodoForm.descricao || !periodoForm.data_inicio || !periodoForm.data_fim) {
-      alert('Preencha a descrição e as datas')
+      await alert('Preencha a descrição e as datas')
       return
     }
     if (periodoForm.data_fim < periodoForm.data_inicio) {
-      alert('A data de fim não pode ser anterior à data de início')
+      await alert('A data de fim não pode ser anterior à data de início')
       return
     }
     await db.criarPeriodoNaoLetivo({
@@ -112,7 +119,7 @@ export default function Calendario() {
   }
 
   async function eliminarPeriodo(id) {
-    if (!confirm('Eliminar este período?')) return
+    if (!await confirm('Eliminar este período?', { danger: true })) return
     await db.eliminarPeriodoNaoLetivo(id)
     await carregarDados()
   }
@@ -140,7 +147,7 @@ export default function Calendario() {
 
   async function moverAula(aulaId, novaData) {
     if (diasNaoLetivos[novaData]) {
-      alert('Não é possível mover a aula para um dia não letivo.')
+      await alert('Não é possível mover a aula para um dia não letivo.', { type: 'warning' })
       return
     }
     const aula = aulas.find(a => a.id === aulaId)
@@ -150,7 +157,7 @@ export default function Calendario() {
   }
 
   async function eliminarAulaNoCalendario(aulaId) {
-    if (!confirm('Eliminar esta aula?')) return
+    if (!await confirm('Eliminar esta aula?', { danger: true })) return
     await db.eliminarAula(aulaId)
     await carregarDados()
   }
@@ -210,7 +217,7 @@ export default function Calendario() {
   const diasSemana = getDiasSemana()
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="page-title">Calendário</h1>
@@ -263,9 +270,9 @@ export default function Calendario() {
       </div>
 
       {/* Calendar */}
-      <div className="card flex-1 overflow-hidden p-0">
+      <div className="card overflow-hidden p-0">
         {vista === 'mensal' ? (
-          <div className="h-full flex flex-col">
+          <div className="flex flex-col">
             {/* Day headers */}
             <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
               {DIAS_SEMANA_CURTO_MON.map(d => (
@@ -275,9 +282,9 @@ export default function Calendario() {
               ))}
             </div>
             {/* Days grid */}
-            <div className="flex-1 grid grid-cols-7 auto-rows-fr">
+            <div className="grid grid-cols-7" style={{ gridAutoRows: 'minmax(7rem, auto)' }}>
               {diasMes.map((item, idx) => {
-                const dateStr = item.date.toISOString().split('T')[0]
+                const dateStr = toDateStr(item.date)
                 const aulasNoDia = getAulasDoDia(dateStr)
                 const isHoje = dateStr === hojeStr
                 const isCurrentMonth = item.currentMonth
@@ -287,7 +294,7 @@ export default function Calendario() {
                 return (
                   <div
                     key={idx}
-                    className={`border-b border-r border-gray-100 dark:border-gray-700/50 p-1 min-h-0 overflow-hidden ${
+                    className={`border-b border-r border-gray-100 dark:border-gray-700/50 p-1 overflow-hidden ${
                       feriado
                         ? isPeriodo
                           ? 'bg-amber-50 dark:bg-amber-900/10'
@@ -354,10 +361,10 @@ export default function Calendario() {
           </div>
         ) : (
           /* Weekly view */
-          <div className="h-full flex flex-col">
+          <div className="flex flex-col">
             <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
               {diasSemana.map((dia, i) => {
-                const diaStr = dia.toISOString().split('T')[0]
+                const diaStr = toDateStr(dia)
                 const isHoje = diaStr === hojeStr
                 const feriado = getFeriado(diaStr)
                 const isPeriodo = feriado?.tipoCor === 'periodo'
@@ -386,9 +393,9 @@ export default function Calendario() {
                 )
               })}
             </div>
-            <div className="flex-1 grid grid-cols-7 overflow-y-auto">
+            <div className="grid grid-cols-7 overflow-y-auto" style={{ minHeight: '24rem' }}>
               {diasSemana.map((dia, i) => {
-                const diaStr = dia.toISOString().split('T')[0]
+                const diaStr = toDateStr(dia)
                 const aulasNoDia = getAulasDoDia(diaStr)
                 const isHoje = diaStr === hojeStr
                 const feriado = getFeriado(diaStr)
@@ -631,6 +638,7 @@ export default function Calendario() {
           )}
         </div>
       </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

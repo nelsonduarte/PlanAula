@@ -151,6 +151,20 @@ function runMigrations() {
   if (!colunasDisciplinas.includes("curso_id")) {
     db2.exec(`ALTER TABLE disciplinas ADD COLUMN curso_id INTEGER REFERENCES cursos(id) ON DELETE SET NULL`);
   }
+  const colunasHorarios = db2.prepare(`PRAGMA table_info(horarios)`).all().map((c) => c.name);
+  if (!colunasHorarios.includes("sala")) {
+    db2.exec(`ALTER TABLE horarios ADD COLUMN sala TEXT`);
+  }
+  const colunasTurmas = db2.prepare(`PRAGMA table_info(turmas)`).all().map((c) => c.name);
+  if (!colunasTurmas.includes("data_inicio")) {
+    db2.exec(`ALTER TABLE turmas ADD COLUMN data_inicio DATE`);
+  }
+  if (!colunasTurmas.includes("data_fim")) {
+    db2.exec(`ALTER TABLE turmas ADD COLUMN data_fim DATE`);
+  }
+  if (!colunasTurmas.includes("carga_horaria")) {
+    db2.exec(`ALTER TABLE turmas ADD COLUMN carga_horaria INTEGER NOT NULL DEFAULT 0`);
+  }
   const stmt = db2.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)`);
   stmt.run("tema", "light");
   stmt.run("nome_professor", "");
@@ -255,8 +269,8 @@ function eliminarModulo(id) {
 function criarTurma(dados) {
   const db2 = getDb();
   const stmt = db2.prepare(`
-    INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor)
-    VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor)
+    INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor, data_inicio, data_fim, carga_horaria)
+    VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor, @data_inicio, @data_fim, @carga_horaria)
   `);
   const result = stmt.run(dados);
   return { id: result.lastInsertRowid, ...dados };
@@ -289,7 +303,8 @@ function editarTurma(id, dados) {
   const db2 = getDb();
   db2.prepare(`
     UPDATE turmas SET disciplina_id=@disciplina_id, designacao=@designacao,
-      ano_letivo=@ano_letivo, semestre=@semestre, sala=@sala, cor=@cor
+      ano_letivo=@ano_letivo, semestre=@semestre, sala=@sala, cor=@cor,
+      data_inicio=@data_inicio, data_fim=@data_fim, carga_horaria=@carga_horaria
     WHERE id=@id
   `).run({ ...dados, id });
   return buscarTurma(id);
@@ -302,8 +317,8 @@ function eliminarTurma(id) {
 function criarHorario(dados) {
   const db2 = getDb();
   const stmt = db2.prepare(`
-    INSERT INTO horarios (turma_id, dia_semana, hora_inicio, hora_fim)
-    VALUES (@turma_id, @dia_semana, @hora_inicio, @hora_fim)
+    INSERT INTO horarios (turma_id, dia_semana, hora_inicio, hora_fim, sala)
+    VALUES (@turma_id, @dia_semana, @hora_inicio, @hora_fim, @sala)
   `);
   const result = stmt.run(dados);
   return { id: result.lastInsertRowid, ...dados };
@@ -318,7 +333,7 @@ function listarHorarios(turma_id) {
 function editarHorario(id, dados) {
   const db2 = getDb();
   db2.prepare(`
-    UPDATE horarios SET dia_semana=@dia_semana, hora_inicio=@hora_inicio, hora_fim=@hora_fim WHERE id=@id
+    UPDATE horarios SET dia_semana=@dia_semana, hora_inicio=@hora_inicio, hora_fim=@hora_fim, sala=@sala WHERE id=@id
   `).run({ ...dados, id });
   return db2.prepare("SELECT * FROM horarios WHERE id = ?").get(id);
 }
@@ -435,8 +450,7 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   if (!turma) throw new Error("Turma não encontrada");
   const horarios = listarHorarios(turma_id);
   if (!horarios.length) throw new Error("Sem horários definidos para esta turma");
-  const disciplina = db2.prepare("SELECT carga_horaria FROM disciplinas WHERE id = ?").get(turma.disciplina_id);
-  const carga_horaria = disciplina?.carga_horaria || 0;
+  const carga_horaria = turma.carga_horaria || 0;
   const rowExistentes = db2.prepare(`
     SELECT COALESCE(SUM(
       (CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER)) -
@@ -445,7 +459,6 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
     FROM aulas WHERE turma_id = ? AND estado != 'Cancelada'
   `).get(turma_id);
   const horas_existentes = (rowExistentes?.total_min || 0) / 60;
-  const horas_disponiveis = carga_horaria > 0 ? Math.max(0, carga_horaria - horas_existentes) : Infinity;
   function slotHoras(h) {
     const [hi, mi] = h.hora_inicio.split(":").map(Number);
     const [hf, mf] = h.hora_fim.split(":").map(Number);
@@ -465,25 +478,27 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
     const cur = new Date(Math.max(new Date(p.data_inicio), new Date(data_inicio)));
     const fim = new Date(Math.min(new Date(p.data_fim), new Date(data_fim)));
     while (cur <= fim) {
-      diasNaoLetivos.add(cur.toISOString().split("T")[0]);
-      cur.setDate(cur.getDate() + 1);
+      const y = cur.getUTCFullYear(), m = String(cur.getUTCMonth() + 1).padStart(2, "0"), d = String(cur.getUTCDate()).padStart(2, "0");
+      diasNaoLetivos.add(`${y}-${m}-${d}`);
+      cur.setUTCDate(cur.getUTCDate() + 1);
     }
   }
   const start = new Date(data_inicio);
   const end = new Date(data_fim);
   const aulas = [];
   let horas_geradas = 0;
-  let limite_atingido = false;
+  let parar = false;
   const current = new Date(start);
-  while (current <= end) {
-    const dataStr = current.toISOString().split("T")[0];
+  while (current <= end && !parar) {
+    const y = current.getUTCFullYear(), mo = String(current.getUTCMonth() + 1).padStart(2, "0"), d = String(current.getUTCDate()).padStart(2, "0");
+    const dataStr = `${y}-${mo}-${d}`;
     if (!diasNaoLetivos.has(dataStr)) {
-      const diaSemana = current.getDay();
-      const horariosHoje = horarios.filter((h) => h.dia_semana === diaSemana);
+      const diaSemana = current.getUTCDay();
+      const horariosHoje = horarios.filter((h) => parseInt(h.dia_semana) === diaSemana);
       for (const h of horariosHoje) {
         const duracaoSlot = slotHoras(h);
-        if (horas_disponiveis !== Infinity && horas_geradas + duracaoSlot > horas_disponiveis + 1e-3) {
-          limite_atingido = true;
+        if (carga_horaria > 0 && horas_existentes + horas_geradas + duracaoSlot > carga_horaria) {
+          parar = true;
           break;
         }
         const existente = db2.prepare(
@@ -507,12 +522,16 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
           });
           aulas.push(a);
           horas_geradas += duracaoSlot;
+          if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
+            parar = true;
+            break;
+          }
         }
       }
     }
-    if (limite_atingido) break;
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
+  const limite_atingido = carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria;
   return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido };
 }
 function criarInstituicao(dados) {
@@ -886,7 +905,7 @@ function obterEstatisticas(ano_letivo) {
     GROUP BY estado
   `).all(String(anoInicio));
   const porDisciplina = db2.prepare(`
-    SELECT d.nome as disciplina_nome, d.cor,
+    SELECT d.nome as disciplina_nome,
            COUNT(a.id) as total_aulas,
            SUM((strftime('%H', a.hora_fim) * 60 + strftime('%M', a.hora_fim) -
                 strftime('%H', a.hora_inicio) * 60 - strftime('%M', a.hora_inicio)) / 60.0) as total_horas

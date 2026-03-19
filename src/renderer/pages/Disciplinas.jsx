@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const TIPOS = ['teórica', 'prática', 'mista', 'laboratorial', 'seminarial']
 
@@ -13,6 +15,7 @@ const emptyModulo = { nome: '', ordem: 0, horas: '', objetivos: '' }
 
 export default function Disciplinas() {
   const db = useDatabase()
+  const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
   const [disciplinas, setDisciplinas] = useState([])
   const [cursos, setCursos] = useState([])
   const [modulos, setModulos] = useState({})
@@ -77,7 +80,7 @@ export default function Disciplinas() {
   }
 
   async function eliminar(id) {
-    if (!confirm('Eliminar esta disciplina? Todos os dados associados serão eliminados.')) return
+    if (!await confirm('Eliminar esta disciplina? Todos os dados associados serão eliminados.', { danger: true })) return
     await db.eliminarDisciplina(id)
     await carregarDados()
   }
@@ -85,10 +88,10 @@ export default function Disciplinas() {
   async function eliminarTodasAulasDisciplina(disc) {
     const aulasDisc = aulas.filter(a => a.disciplina_id === disc.id)
     if (aulasDisc.length === 0) {
-      alert(`A disciplina "${disc.nome}" não tem aulas registadas.`)
+      await alert(`A disciplina "${disc.nome}" não tem aulas registadas.`)
       return
     }
-    if (!confirm(`Eliminar todas as ${aulasDisc.length} aula(s) da disciplina "${disc.nome}"? Esta ação não pode ser revertida.`)) return
+    if (!await confirm(`Eliminar todas as ${aulasDisc.length} aula(s) da disciplina "${disc.nome}"? Esta ação não pode ser revertida.`, { danger: true })) return
     await db.eliminarAulasDaDisciplina(disc.id)
     await carregarDados()
   }
@@ -111,7 +114,7 @@ export default function Disciplinas() {
   }
 
   async function eliminarModulo(id) {
-    if (!confirm('Eliminar este módulo?')) return
+    if (!await confirm('Eliminar este módulo?', { danger: true })) return
     await db.eliminarModulo(id)
     await carregarModulos(disciplinaSelecionada.id)
   }
@@ -446,6 +449,7 @@ export default function Disciplinas() {
           </div>
         )}
       </Modal>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }

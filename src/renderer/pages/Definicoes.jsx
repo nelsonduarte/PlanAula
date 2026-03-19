@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
+import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const TIPOS_DIA = ['feriado', 'interrupção letiva', 'outro']
 
@@ -117,6 +119,7 @@ function DiasNaoLetivos({ db }) {
 
 export default function Definicoes() {
   const db = useDatabase()
+  const { confirm, dialog, handleOk, handleCancel } = useDialog()
   const anoAtual = new Date().getFullYear()
 
   const [config, setConfig] = useState({
@@ -215,7 +218,7 @@ export default function Definicoes() {
   }
 
   async function restaurarBackup() {
-    if (!confirm('Isto irá substituir todos os dados actuais pelo ficheiro de backup. Continuar?')) return
+    if (!await confirm('Isto irá substituir todos os dados actuais pelo ficheiro de backup. Continuar?', { danger: true })) return
     setBackupMsg('')
     const result = await db.importarBackup()
     if (result?.success) setBackupMsg('✓ ' + result.message)
@@ -448,6 +451,7 @@ export default function Definicoes() {
           </div>
         </div>
       </div>
+      <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
     </div>
   )
 }
