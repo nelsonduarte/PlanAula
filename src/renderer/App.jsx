@@ -10,6 +10,7 @@ import Financeiro from './pages/Financeiro.jsx'
 import Estatisticas from './pages/Estatisticas.jsx'
 import Cursos from './pages/Cursos.jsx'
 import Definicoes from './pages/Definicoes.jsx'
+import Importar from './pages/Importar.jsx'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="cursos" element={<Cursos />} />
           <Route path="estatisticas" element={<Estatisticas />} />
           <Route path="definicoes" element={<Definicoes />} />
+          <Route path="importar" element={<Importar />} />
         </Route>
       </Routes>
     </HashRouter>
