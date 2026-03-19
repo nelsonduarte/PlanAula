@@ -15,6 +15,12 @@ export default function Layout() {
     localStorage.setItem('tema', theme)
   }, [theme])
 
+  useEffect(() => {
+    const handler = (e) => setTheme(e.detail)
+    window.addEventListener('planaula-tema', handler)
+    return () => window.removeEventListener('planaula-tema', handler)
+  }, [])
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       {/* Sidebar */}

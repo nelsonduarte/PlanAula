@@ -11,6 +11,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow
 
 function createWindow() {
+  const isDev = !app.isPackaged
+  const iconPath = isDev
+    ? path.join(__dirname, '../../build/icon.ico')
+    : path.join(process.resourcesPath, 'icon.ico')
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -24,10 +29,9 @@ function createWindow() {
     },
     titleBarStyle: 'default',
     show: false,
-    backgroundColor: '#f8fafc'
+    backgroundColor: '#f8fafc',
+    icon: iconPath
   })
-
-  const isDev = !app.isPackaged
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -37,6 +41,7 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 

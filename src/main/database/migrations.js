@@ -142,4 +142,35 @@ export function runMigrations() {
   stmt.run('instituicao', '')
   stmt.run('departamento', '')
   stmt.run('ano_letivo_atual', new Date().getFullYear() + '/' + (new Date().getFullYear() + 1))
+
+  // Nova tabela: outros_rendimentos
+  const tabelasExistentes = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name)
+  if (!tabelasExistentes.includes('outros_rendimentos')) {
+    db.exec(`
+      CREATE TABLE outros_rendimentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        descricao TEXT NOT NULL,
+        valor REAL NOT NULL,
+        data DATE NOT NULL,
+        tipo TEXT DEFAULT 'Outro',
+        notas TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+  }
+
+  // Nova tabela: periodos_nao_letivos (intervalos de datas por instituição)
+  if (!tabelasExistentes.includes('periodos_nao_letivos')) {
+    db.exec(`
+      CREATE TABLE periodos_nao_letivos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instituicao_id INTEGER REFERENCES instituicoes(id) ON DELETE CASCADE,
+        descricao TEXT NOT NULL,
+        data_inicio DATE NOT NULL,
+        data_fim DATE NOT NULL,
+        tipo TEXT NOT NULL DEFAULT 'férias',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+  }
 }

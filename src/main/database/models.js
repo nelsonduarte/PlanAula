@@ -272,6 +272,16 @@ export function eliminarAula(id) {
   return { success: true }
 }
 
+export function eliminarAulasDaDisciplina(disciplina_id) {
+  const db = getDb()
+  const info = db.prepare(`
+    DELETE FROM aulas WHERE turma_id IN (
+      SELECT id FROM turmas WHERE disciplina_id = ?
+    )
+  `).run(disciplina_id)
+  return { success: true, eliminadas: info.changes }
+}
+
 export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const db = getDb()
   const turma = buscarTurma(turma_id)
@@ -280,26 +290,82 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const horarios = listarHorarios(turma_id)
   if (!horarios.length) throw new Error('Sem horários definidos para esta turma')
 
-  // Carregar dias não lectivos no intervalo
+  // Carga horária da disciplina
+  const disciplina = db.prepare('SELECT carga_horaria FROM disciplinas WHERE id = ?').get(turma.disciplina_id)
+  const carga_horaria = disciplina?.carga_horaria || 0
+
+  // Horas já planeadas para esta turma (excluindo canceladas)
+  const rowExistentes = db.prepare(`
+    SELECT COALESCE(SUM(
+      (CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER)) -
+      (CAST(substr(hora_inicio,1,2) AS INTEGER)*60 + CAST(substr(hora_inicio,4,2) AS INTEGER))
+    ), 0) as total_min
+    FROM aulas WHERE turma_id = ? AND estado != 'Cancelada'
+  `).get(turma_id)
+  const horas_existentes = (rowExistentes?.total_min || 0) / 60
+
+  // Horas disponíveis (Infinity se carga_horaria não definida)
+  const horas_disponiveis = carga_horaria > 0 ? Math.max(0, carga_horaria - horas_existentes) : Infinity
+
+  // Duração em horas de cada slot de horário
+  function slotHoras(h) {
+    const [hi, mi] = h.hora_inicio.split(':').map(Number)
+    const [hf, mf] = h.hora_fim.split(':').map(Number)
+    return (hf * 60 + mf - hi * 60 - mi) / 60
+  }
+
+  // Carregar dias não lectivos individuais no intervalo
   const diasNaoLetivos = new Set(
     db.prepare('SELECT data FROM dias_nao_letivos WHERE data >= ? AND data <= ?')
       .all(data_inicio, data_fim)
       .map(r => r.data)
   )
 
+  // Expandir períodos não letivos que se sobreponham ao intervalo
+  // (períodos globais ou da instituição a que a turma pertence)
+  const disc = db.prepare('SELECT curso_id FROM disciplinas WHERE id = ?').get(turma.disciplina_id)
+  const instId = disc?.curso_id
+    ? db.prepare('SELECT instituicao_id FROM cursos WHERE id = ?').get(disc.curso_id)?.instituicao_id
+    : null
+
+  const periodos = db.prepare(`
+    SELECT data_inicio, data_fim FROM periodos_nao_letivos
+    WHERE (data_fim >= ? AND data_inicio <= ?)
+      AND (instituicao_id IS NULL ${instId ? 'OR instituicao_id = ?' : ''})
+  `).all(...(instId ? [data_inicio, data_fim, instId] : [data_inicio, data_fim]))
+
+  for (const p of periodos) {
+    const cur = new Date(Math.max(new Date(p.data_inicio), new Date(data_inicio)))
+    const fim = new Date(Math.min(new Date(p.data_fim), new Date(data_fim)))
+    while (cur <= fim) {
+      diasNaoLetivos.add(cur.toISOString().split('T')[0])
+      cur.setDate(cur.getDate() + 1)
+    }
+  }
+
   const start = new Date(data_inicio)
   const end = new Date(data_fim)
   const aulas = []
+  let horas_geradas = 0
+  let limite_atingido = false
 
   const current = new Date(start)
   while (current <= end) {
     const dataStr = current.toISOString().split('T')[0]
 
     if (!diasNaoLetivos.has(dataStr)) {
-      const diaSemana = current.getDay() // 0=Sun, 1=Mon...
+      const diaSemana = current.getDay()
       const horariosHoje = horarios.filter(h => h.dia_semana === diaSemana)
 
       for (const h of horariosHoje) {
+        const duracaoSlot = slotHoras(h)
+
+        // Verificar se ultrapassa a carga horária
+        if (horas_disponiveis !== Infinity && horas_geradas + duracaoSlot > horas_disponiveis + 0.001) {
+          limite_atingido = true
+          break
+        }
+
         const existente = db.prepare(
           'SELECT id FROM aulas WHERE turma_id=? AND data=? AND hora_inicio=?'
         ).get(turma_id, dataStr, h.hora_inicio)
@@ -313,14 +379,16 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
             notas: null, estado: 'Planeada'
           })
           aulas.push(a)
+          horas_geradas += duracaoSlot
         }
       }
     }
 
+    if (limite_atingido) break
     current.setDate(current.getDate() + 1)
   }
 
-  return aulas
+  return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido }
 }
 
 // ─── Instituições ─────────────────────────────────────────────────────────────
@@ -571,8 +639,15 @@ export function calcularFinanceiroMensal(ano, mes) {
     porDisciplina[aula.disciplina_id].valor_bruto += horas * valorHora
   }
 
+  // Outros rendimentos do mês
+  const outrosRendimentos = db.prepare(
+    "SELECT * FROM outros_rendimentos WHERE strftime('%Y-%m', data) = ? ORDER BY data"
+  ).all(mesStr)
+  const total_outros_bruto = outrosRendimentos.reduce((s, r) => s + r.valor, 0)
+
   const itens = Object.values(porDisciplina)
-  const total_bruto = itens.reduce((s, i) => s + i.valor_bruto, 0)
+  const total_bruto_aulas = itens.reduce((s, i) => s + i.valor_bruto, 0)
+  const total_bruto = total_bruto_aulas + total_outros_bruto
   const total_iva = total_bruto * taxa_iva
   const total_com_iva = total_bruto + total_iva
   const total_irs = total_bruto * taxa_irs
@@ -582,8 +657,10 @@ export function calcularFinanceiroMensal(ano, mes) {
   return {
     mes: mesStr,
     itens,
+    outros: outrosRendimentos,
     total_horas,
     total_bruto,
+    total_outros_bruto,
     taxa_iva,
     total_iva,
     total_com_iva,
@@ -658,6 +735,87 @@ export function salvarConfiguracoes(pares) {
     }
   })
   transaction()
+  return { success: true }
+}
+
+// ─── Outros Rendimentos ──────────────────────────────────────────────────────
+
+export function criarOutroRendimento(dados) {
+  const db = getDb()
+  const result = db.prepare(`
+    INSERT INTO outros_rendimentos (descricao, valor, data, tipo, notas)
+    VALUES (@descricao, @valor, @data, @tipo, @notas)
+  `).run(dados)
+  return { id: result.lastInsertRowid, ...dados }
+}
+
+export function listarOutrosRendimentos(filtros = {}) {
+  const db = getDb()
+  let query = 'SELECT * FROM outros_rendimentos WHERE 1=1'
+  const params = []
+  if (filtros.ano) {
+    query += " AND strftime('%Y', data) = ?"
+    params.push(String(filtros.ano))
+  }
+  if (filtros.mes) {
+    query += " AND strftime('%Y-%m', data) = ?"
+    params.push(filtros.mes)
+  }
+  query += ' ORDER BY data DESC'
+  return db.prepare(query).all(...params)
+}
+
+export function editarOutroRendimento(id, dados) {
+  const db = getDb()
+  db.prepare(`
+    UPDATE outros_rendimentos SET descricao=@descricao, valor=@valor, data=@data, tipo=@tipo, notas=@notas WHERE id=@id
+  `).run({ ...dados, id })
+  return db.prepare('SELECT * FROM outros_rendimentos WHERE id = ?').get(id)
+}
+
+export function eliminarOutroRendimento(id) {
+  const db = getDb()
+  db.prepare('DELETE FROM outros_rendimentos WHERE id = ?').run(id)
+  return { success: true }
+}
+
+// ─── Períodos Não Letivos ─────────────────────────────────────────────────────
+
+export function listarPeriodosNaoLetivos(instituicao_id) {
+  const db = getDb()
+  if (instituicao_id) {
+    return db.prepare(`
+      SELECT p.*, i.nome as instituicao_nome
+      FROM periodos_nao_letivos p
+      LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+      WHERE p.instituicao_id = ? OR p.instituicao_id IS NULL
+      ORDER BY p.data_inicio
+    `).all(instituicao_id)
+  }
+  return db.prepare(`
+    SELECT p.*, i.nome as instituicao_nome
+    FROM periodos_nao_letivos p
+    LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+    ORDER BY p.data_inicio
+  `).all()
+}
+
+export function criarPeriodoNaoLetivo(dados) {
+  const db = getDb()
+  const result = db.prepare(`
+    INSERT INTO periodos_nao_letivos (instituicao_id, descricao, data_inicio, data_fim, tipo)
+    VALUES (@instituicao_id, @descricao, @data_inicio, @data_fim, @tipo)
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null })
+  return db.prepare(`
+    SELECT p.*, i.nome as instituicao_nome
+    FROM periodos_nao_letivos p LEFT JOIN instituicoes i ON i.id = p.instituicao_id
+    WHERE p.id = ?
+  `).get(result.lastInsertRowid)
+}
+
+export function eliminarPeriodoNaoLetivo(id) {
+  const db = getDb()
+  db.prepare('DELETE FROM periodos_nao_letivos WHERE id = ?').run(id)
   return { success: true }
 }
 

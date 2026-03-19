@@ -8,6 +8,7 @@ import Aulas from './pages/Aulas.jsx'
 import Calendario from './pages/Calendario.jsx'
 import Financeiro from './pages/Financeiro.jsx'
 import Estatisticas from './pages/Estatisticas.jsx'
+import Cursos from './pages/Cursos.jsx'
 import Definicoes from './pages/Definicoes.jsx'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="aulas" element={<Aulas />} />
           <Route path="calendario" element={<Calendario />} />
           <Route path="financeiro" element={<Financeiro />} />
+          <Route path="cursos" element={<Cursos />} />
           <Route path="estatisticas" element={<Estatisticas />} />
           <Route path="definicoes" element={<Definicoes />} />
         </Route>

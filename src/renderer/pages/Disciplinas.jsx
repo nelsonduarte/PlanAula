@@ -82,6 +82,17 @@ export default function Disciplinas() {
     await carregarDados()
   }
 
+  async function eliminarTodasAulasDisciplina(disc) {
+    const aulasDisc = aulas.filter(a => a.disciplina_id === disc.id)
+    if (aulasDisc.length === 0) {
+      alert(`A disciplina "${disc.nome}" não tem aulas registadas.`)
+      return
+    }
+    if (!confirm(`Eliminar todas as ${aulasDisc.length} aula(s) da disciplina "${disc.nome}"? Esta ação não pode ser revertida.`)) return
+    await db.eliminarAulasDaDisciplina(disc.id)
+    await carregarDados()
+  }
+
   async function salvarModulo() {
     const dados = {
       ...formModulo,
@@ -169,10 +180,15 @@ export default function Disciplinas() {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-2">
                   <span>⏱️ {disc.carga_horaria}h</span>
                   {disc.ects && <span>📖 {disc.ects} ECTS</span>}
                 </div>
+                {disc.curso_nome && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2 truncate">
+                    🎓 {disc.curso_nome}{disc.instituicao_nome ? ` · ${disc.instituicao_nome}` : ''}
+                  </p>
+                )}
 
                 {/* Progress bar */}
                 <div className="mb-4">
@@ -200,6 +216,13 @@ export default function Disciplinas() {
                     className="btn-secondary text-xs py-1.5 px-3"
                   >
                     ✏️
+                  </button>
+                  <button
+                    onClick={() => eliminarTodasAulasDisciplina(disc)}
+                    className="btn-secondary text-xs py-1.5 px-3"
+                    title="Eliminar todas as aulas desta disciplina"
+                  >
+                    🗑️ Aulas
                   </button>
                   <button
                     onClick={() => eliminar(disc.id)}
@@ -290,6 +313,21 @@ export default function Disciplinas() {
                 className="input-field"
               >
                 {TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="label-field">Curso</label>
+              <select
+                value={form.curso_id || ''}
+                onChange={e => setForm(f => ({ ...f, curso_id: e.target.value ? Number(e.target.value) : null }))}
+                className="input-field"
+              >
+                <option value="">— Sem curso associado —</option>
+                {cursos.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}{c.instituicao_nome ? ` (${c.instituicao_nome})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="col-span-2">

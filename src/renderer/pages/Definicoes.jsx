@@ -177,6 +177,7 @@ export default function Definicoes() {
       document.documentElement.classList.remove('dark')
     }
     localStorage.setItem('tema', tema)
+    window.dispatchEvent(new CustomEvent('planaula-tema', { detail: tema }))
   }
 
   async function salvarPerfil() {
@@ -241,7 +242,7 @@ export default function Definicoes() {
           <label className="label-field">Tema</label>
           <div className="flex gap-3">
             <button
-              onClick={() => setConfig(c => ({ ...c, tema: 'light' }))}
+              onClick={() => { setConfig(c => ({ ...c, tema: 'light' })); aplicarTema('light') }}
               className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 transition-all ${
                 config.tema === 'light'
                   ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
@@ -252,7 +253,7 @@ export default function Definicoes() {
               <span className="font-medium">Claro</span>
             </button>
             <button
-              onClick={() => setConfig(c => ({ ...c, tema: 'dark' }))}
+              onClick={() => { setConfig(c => ({ ...c, tema: 'dark' })); aplicarTema('dark') }}
               className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 transition-all ${
                 config.tema === 'dark'
                   ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'

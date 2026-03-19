@@ -66,7 +66,8 @@ export default function Turmas() {
 
   async function abrirHorarios(turma) {
     setTurmaSelecionada(turma)
-    await carregarHorarios(turma.id)
+    const h = await carregarHorarios(turma.id)
+    setNovosHorarios(h && h.length > 0 ? h : [{ dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00' }])
     setModalHorarios(true)
   }
 
@@ -206,7 +207,7 @@ export default function Turmas() {
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => { abrirHorarios(turma); setNovosHorarios(horarios[turma.id] || [{ dia_semana: 1, hora_inicio: '09:00', hora_fim: '11:00' }]) }}
+                        onClick={() => abrirHorarios(turma)}
                         className="flex-1 btn-secondary text-xs py-1.5"
                         onMouseEnter={() => carregarHorarios(turma.id)}
                       >

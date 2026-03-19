@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
     gerarAutomatico: (turma_id, data_inicio, data_fim) =>
       invoke('aulas:gerarAutomatico', { turma_id, data_inicio, data_fim }),
     proximoNumero: (turma_id) => invoke('aulas:proximoNumero', turma_id),
+    eliminarDaDisciplina: (disciplina_id) => invoke('aulas:eliminarDaDisciplina', disciplina_id),
   },
 
   // Dias Não Lectivos
@@ -103,9 +104,24 @@ contextBridge.exposeInMainWorld('api', {
     eliminar: (id) => invoke('cursos:eliminar', id),
   },
 
+  // Períodos Não Letivos
+  periodosNaoLetivos: {
+    listar: (instituicao_id) => invoke('periodosNaoLetivos:listar', instituicao_id),
+    criar: (dados) => invoke('periodosNaoLetivos:criar', dados),
+    eliminar: (id) => invoke('periodosNaoLetivos:eliminar', id),
+  },
+
   // Backup
   backup: {
     exportar: () => invoke('backup:exportar'),
     importar: () => invoke('backup:importar'),
+  },
+
+  // Outros Rendimentos
+  outrosRendimentos: {
+    listar: (filtros) => invoke('outrosRendimentos:listar', filtros),
+    criar: (dados) => invoke('outrosRendimentos:criar', dados),
+    editar: (id, dados) => invoke('outrosRendimentos:editar', { id, dados }),
+    eliminar: (id) => invoke('outrosRendimentos:eliminar', id),
   },
 })

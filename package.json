@@ -5,6 +5,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "node scripts/dev.js",
+    "run:app": "node scripts/run.js",
     "build": "electron-vite build && electron-builder",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps"
@@ -46,10 +47,15 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {
       "target": "dir",
+      "icon": "build/icon.ico",
       "signingHashAlgorithms": null,
       "sign": null
     },

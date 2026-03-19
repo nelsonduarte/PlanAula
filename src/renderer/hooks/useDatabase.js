@@ -135,6 +135,11 @@ export function useDatabase() {
   )
 
   // Aulas
+  const eliminarAulasDaDisciplina = (disciplina_id) => execute(
+    () => window.api.aulas.eliminarDaDisciplina(disciplina_id),
+    { success: true }
+  )
+
   const listarAulas = (filtros) => execute(
     () => window.api.aulas.listar(filtros),
     mockData.aulas
@@ -157,7 +162,7 @@ export function useDatabase() {
 
   const gerarAulasAutomatico = (turma_id, data_inicio, data_fim) => execute(
     () => window.api.aulas.gerarAutomatico(turma_id, data_inicio, data_fim),
-    []
+    null
   )
 
   const proximoNumeroAula = (turma_id) => execute(
@@ -217,6 +222,20 @@ export function useDatabase() {
     dados
   )
 
+  // Períodos Não Letivos
+  const listarPeriodosNaoLetivos = (instituicao_id) => execute(
+    () => window.api.periodosNaoLetivos.listar(instituicao_id),
+    []
+  )
+  const criarPeriodoNaoLetivo = (dados) => execute(
+    () => window.api.periodosNaoLetivos.criar(dados),
+    { id: Date.now(), ...dados }
+  )
+  const eliminarPeriodoNaoLetivo = (id) => execute(
+    () => window.api.periodosNaoLetivos.eliminar(id),
+    { success: true }
+  )
+
   // Instituições
   const listarInstituicoes = () => execute(() => window.api.instituicoes.listar(), [])
   const criarInstituicao = (dados) => execute(() => window.api.instituicoes.criar(dados), { id: Date.now(), ...dados })
@@ -268,13 +287,31 @@ export function useDatabase() {
     { success: false, error: 'Não disponível fora do Electron' }
   )
 
+  // Outros Rendimentos
+  const listarOutrosRendimentos = (filtros) => execute(
+    () => window.api.outrosRendimentos.listar(filtros),
+    []
+  )
+  const criarOutroRendimento = (dados) => execute(
+    () => window.api.outrosRendimentos.criar(dados),
+    { id: Date.now(), ...dados }
+  )
+  const editarOutroRendimento = (id, dados) => execute(
+    () => window.api.outrosRendimentos.editar(id, dados),
+    { id, ...dados }
+  )
+  const eliminarOutroRendimento = (id) => execute(
+    () => window.api.outrosRendimentos.eliminar(id),
+    { success: true }
+  )
+
   return {
     loading, error,
     listarDisciplinas, criarDisciplina, editarDisciplina, eliminarDisciplina,
     listarModulos, criarModulo, editarModulo, eliminarModulo,
     listarTurmas, criarTurma, editarTurma, eliminarTurma,
     listarHorarios, criarHorario, editarHorario, eliminarHorario, eliminarHorariosDaTurma,
-    listarAulas, criarAula, editarAula, eliminarAula, gerarAulasAutomatico, proximoNumeroAula,
+    listarAulas, criarAula, editarAula, eliminarAula, gerarAulasAutomatico, proximoNumeroAula, eliminarAulasDaDisciplina,
     listarDiasNaoLetivos, criarDiaNaoLetivo, eliminarDiaNaoLetivo, importarFeriadosNacionais,
     calcularFinanceiroMensal, calcularFinanceiroAnual, obterConfigFiscal, salvarConfigFiscal,
     listarValoresHora, salvarValorHora,
@@ -283,6 +320,8 @@ export function useDatabase() {
     obterConfiguracoes, salvarConfiguracoes,
     obterEstatisticas,
     exportarAulaPlano, exportarRelatorioFinanceiro,
-    exportarBackup, importarBackup
+    exportarBackup, importarBackup,
+    listarOutrosRendimentos, criarOutroRendimento, editarOutroRendimento, eliminarOutroRendimento,
+    listarPeriodosNaoLetivos, criarPeriodoNaoLetivo, eliminarPeriodoNaoLetivo
   }
 }

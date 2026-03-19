@@ -312,6 +312,11 @@ export function registerHandlers() {
     catch (e) { return { success: false, error: e.message } }
   })
 
+  ipcMain.handle('aulas:eliminarDaDisciplina', async (_, disciplina_id) => {
+    try { return { success: true, data: models.eliminarAulasDaDisciplina(disciplina_id) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   // ─── Financeiro ───────────────────────────────────────────────────────────
   ipcMain.handle('financeiro:calcularMensal', async (_, { ano, mes }) => {
     try { return { success: true, data: models.calcularFinanceiroMensal(ano, mes) } }
@@ -390,6 +395,20 @@ export function registerHandlers() {
     catch (e) { return { success: false, error: e.message } }
   })
 
+  // ─── Períodos Não Letivos ─────────────────────────────────────────────────
+  ipcMain.handle('periodosNaoLetivos:listar', async (_, instituicao_id) => {
+    try { return { success: true, data: models.listarPeriodosNaoLetivos(instituicao_id) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+  ipcMain.handle('periodosNaoLetivos:criar', async (_, dados) => {
+    try { return { success: true, data: models.criarPeriodoNaoLetivo(dados) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+  ipcMain.handle('periodosNaoLetivos:eliminar', async (_, id) => {
+    try { return { success: true, data: models.eliminarPeriodoNaoLetivo(id) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   ipcMain.handle('aulas:proximoNumero', async (_, turma_id) => {
     try { return { success: true, data: models.proximoNumeroAula(turma_id) } }
     catch (e) { return { success: false, error: e.message } }
@@ -440,6 +459,27 @@ export function registerHandlers() {
   })
   ipcMain.handle('cursos:eliminar', async (_, id) => {
     try { return { success: true, data: models.eliminarCurso(id) } } catch (e) { return { success: false, error: e.message } }
+  })
+
+  // ─── Outros Rendimentos ──────────────────────────────────────────────────
+  ipcMain.handle('outrosRendimentos:listar', async (_, filtros) => {
+    try { return { success: true, data: models.listarOutrosRendimentos(filtros) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('outrosRendimentos:criar', async (_, dados) => {
+    try { return { success: true, data: models.criarOutroRendimento(dados) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('outrosRendimentos:editar', async (_, { id, dados }) => {
+    try { return { success: true, data: models.editarOutroRendimento(id, dados) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('outrosRendimentos:eliminar', async (_, id) => {
+    try { return { success: true, data: models.eliminarOutroRendimento(id) } }
+    catch (e) { return { success: false, error: e.message } }
   })
 
   // ─── Backup ───────────────────────────────────────────────────────────────

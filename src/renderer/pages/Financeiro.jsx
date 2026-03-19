@@ -4,12 +4,18 @@ import { useDatabase } from '../hooks/useDatabase.js'
 
 const MESES_NOMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
+const TIPOS_RENDIMENTO = ['Orientação de Estágio', 'Avaliação/Júri', 'Consultoria', 'Formação', 'Outro']
+
 function formatCurrency(val) {
   return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(val || 0)
 }
 
 function formatPct(val) {
   return ((val || 0) * 100).toFixed(1) + '%'
+}
+
+function hoje() {
+  return new Date().toISOString().split('T')[0]
 }
 
 export default function Financeiro() {
@@ -31,16 +37,23 @@ export default function Financeiro() {
   const [formValor, setFormValor] = useState({ disciplina_id: '', turma_id: '', valor_hora: '', ano_letivo: '' })
   const [vista, setVista] = useState('mensal')
 
+  // Outros Rendimentos
+  const [outrosRendimentos, setOutrosRendimentos] = useState([])
+  const [modalOutro, setModalOutro] = useState(false)
+  const [editandoOutro, setEditandoOutro] = useState(null)
+  const [formOutro, setFormOutro] = useState({ descricao: '', valor: '', data: hoje(), tipo: 'Orientação de Estágio', notas: '' })
+
   useEffect(() => { carregarTudo() }, [anoSelecionado, mesSelecionado])
 
   async function carregarTudo() {
-    const [mensal, anual, config, vh, discs, ts] = await Promise.all([
+    const [mensal, anual, config, vh, discs, ts, outros] = await Promise.all([
       db.calcularFinanceiroMensal(anoSelecionado, mesSelecionado),
       db.calcularFinanceiroAnual(anoSelecionado),
       db.obterConfigFiscal(anoSelecionado),
       db.listarValoresHora(),
       db.listarDisciplinas(),
       db.listarTurmas(),
+      db.listarOutrosRendimentos({ ano: anoSelecionado }),
     ])
     setDadosMensais(mensal)
     setDadosAnuais(anual || [])
@@ -49,6 +62,7 @@ export default function Financeiro() {
     setValoresHora(vh || [])
     setDisciplinas(discs || [])
     setTurmas(ts || [])
+    setOutrosRendimentos(outros || [])
   }
 
   async function salvarConfig() {
@@ -75,6 +89,41 @@ export default function Financeiro() {
     await carregarTudo()
     setModalValor(false)
     setFormValor({ disciplina_id: '', turma_id: '', valor_hora: '', ano_letivo: '' })
+  }
+
+  async function salvarOutroRendimento() {
+    if (!formOutro.descricao || !formOutro.valor || !formOutro.data) {
+      alert('Preencha os campos obrigatórios')
+      return
+    }
+    const dados = { ...formOutro, valor: parseFloat(formOutro.valor) }
+    if (editandoOutro) {
+      await db.editarOutroRendimento(editandoOutro.id, dados)
+    } else {
+      await db.criarOutroRendimento(dados)
+    }
+    await carregarTudo()
+    setModalOutro(false)
+    setEditandoOutro(null)
+    setFormOutro({ descricao: '', valor: '', data: hoje(), tipo: 'Orientação de Estágio', notas: '' })
+  }
+
+  async function handleEliminarOutro(id) {
+    if (!confirm('Eliminar este rendimento?')) return
+    await db.eliminarOutroRendimento(id)
+    await carregarTudo()
+  }
+
+  function abrirEditarOutro(r) {
+    setEditandoOutro(r)
+    setFormOutro({ descricao: r.descricao, valor: String(r.valor), data: r.data, tipo: r.tipo || 'Outro', notas: r.notas || '' })
+    setModalOutro(true)
+  }
+
+  function abrirCriarOutro() {
+    setEditandoOutro(null)
+    setFormOutro({ descricao: '', valor: '', data: hoje(), tipo: 'Orientação de Estágio', notas: '' })
+    setModalOutro(true)
   }
 
   const anosDisponiveis = Array.from({ length: 5 }, (_, i) => anoAtual - 2 + i)
@@ -106,12 +155,21 @@ export default function Financeiro() {
     liquido: dadosAnuais.reduce((s, m) => s + (m.total_liquido || 0), 0),
   }
 
+  // Outros rendimentos do mês selecionado
+  const mesSelecionadoStr = `${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}`
+  const outrosDoMes = dadosMensais?.outros || outrosRendimentos.filter(r => r.data?.startsWith(mesSelecionadoStr))
+  const totalOutrosDoMes = outrosDoMes.reduce((s, r) => s + (r.valor || 0), 0)
+
+  // Total outros anual
+  const totalOutrosAnual = outrosRendimentos.reduce((s, r) => s + (r.valor || 0), 0)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="page-title">Financeiro</h1>
         <div className="flex gap-2">
           <button onClick={exportarPDF} className="btn-secondary">📄 Exportar PDF</button>
+          <button onClick={abrirCriarOutro} className="btn-secondary">+ Outro Rendimento</button>
           <button onClick={() => setModalValor(true)} className="btn-secondary">💶 Valor/Hora</button>
           <button
             onClick={() => { setFormConfig(configFiscal || {}); setModalConfig(true) }}
@@ -169,6 +227,11 @@ export default function Financeiro() {
             <div className="card text-center">
               <p className="text-3xl font-bold text-gray-800 dark:text-gray-200">{formatCurrency(dadosMensais.total_bruto)}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Valor Bruto</p>
+              {dadosMensais.total_outros_bruto > 0 && (
+                <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                  incl. {formatCurrency(dadosMensais.total_outros_bruto)} outros
+                </p>
+              )}
             </div>
             <div className="card text-center">
               <p className="text-3xl font-bold text-red-600 dark:text-red-400">-{formatCurrency(dadosMensais.total_irs)}</p>
@@ -210,8 +273,18 @@ export default function Financeiro() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-gray-300 dark:border-gray-600">
-                      <td colSpan={3} className="py-2.5 font-bold text-gray-900 dark:text-white">Total</td>
-                      <td className="py-2.5 text-right font-bold text-gray-900 dark:text-white">{formatCurrency(dadosMensais.total_bruto)}</td>
+                      <td colSpan={3} className="py-2.5 font-bold text-gray-900 dark:text-white">Total Aulas</td>
+                      <td className="py-2.5 text-right font-bold text-gray-900 dark:text-white">{formatCurrency(dadosMensais.total_bruto - (dadosMensais.total_outros_bruto || 0))}</td>
+                    </tr>
+                    {dadosMensais.total_outros_bruto > 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-1.5 text-purple-600 dark:text-purple-400">Outros Rendimentos</td>
+                        <td className="py-1.5 text-right text-purple-600 dark:text-purple-400">+{formatCurrency(dadosMensais.total_outros_bruto)}</td>
+                      </tr>
+                    )}
+                    <tr className="border-t border-gray-200 dark:border-gray-700">
+                      <td colSpan={3} className="py-1.5 font-semibold text-gray-700 dark:text-gray-300">Total Bruto</td>
+                      <td className="py-1.5 text-right font-semibold text-gray-700 dark:text-gray-300">{formatCurrency(dadosMensais.total_bruto)}</td>
                     </tr>
                     {dadosMensais.taxa_iva > 0 && (
                       <tr>
@@ -232,6 +305,68 @@ export default function Financeiro() {
               </div>
             )}
           </div>
+
+          {/* Outros Rendimentos do mês */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-title">Outros Rendimentos — {MESES_NOMES[mesSelecionado - 1]}</h2>
+              <button onClick={abrirCriarOutro} className="btn-primary text-sm">+ Adicionar</button>
+            </div>
+            {outrosDoMes.length === 0 ? (
+              <p className="text-center text-gray-400 dark:text-gray-500 py-6 text-sm">
+                Sem outros rendimentos neste mês.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-gray-700">
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Descrição</th>
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Tipo</th>
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Data</th>
+                      <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Valor</th>
+                      <th className="py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {outrosDoMes.map((r) => (
+                      <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                        <td className="py-2.5 font-medium text-gray-900 dark:text-white">{r.descricao}</td>
+                        <td className="py-2.5 text-gray-600 dark:text-gray-400">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                            {r.tipo || 'Outro'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.data ? new Date(r.data + 'T12:00:00').toLocaleDateString('pt-PT') : '—'}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold text-purple-700 dark:text-purple-300">{formatCurrency(r.valor)}</td>
+                        <td className="py-2.5 text-right">
+                          <div className="flex gap-1 justify-end">
+                            <button
+                              onClick={() => abrirEditarOutro(r)}
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline px-1"
+                            >Editar</button>
+                            <button
+                              onClick={() => handleEliminarOutro(r.id)}
+                              className="text-xs text-red-600 dark:text-red-400 hover:underline px-1"
+                            >Eliminar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-300 dark:border-gray-600">
+                      <td colSpan={3} className="py-2.5 font-bold text-gray-900 dark:text-white">Total</td>
+                      <td className="py-2.5 text-right font-bold text-purple-700 dark:text-purple-300">{formatCurrency(totalOutrosDoMes)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -246,6 +381,11 @@ export default function Financeiro() {
             <div className="card text-center">
               <p className="text-3xl font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalAnual.bruto)}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Valor Bruto</p>
+              {totalOutrosAnual > 0 && (
+                <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                  incl. {formatCurrency(totalOutrosAnual)} outros
+                </p>
+              )}
             </div>
             <div className="card text-center">
               <p className="text-3xl font-bold text-red-600 dark:text-red-400">-{formatCurrency(totalAnual.irs)}</p>
@@ -266,6 +406,7 @@ export default function Financeiro() {
                   <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Mês</th>
                   <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Horas</th>
                   <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Bruto</th>
+                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Outros</th>
                   <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">IRS</th>
                   <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Líquido</th>
                 </tr>
@@ -282,6 +423,9 @@ export default function Financeiro() {
                     <td className="py-2.5 font-medium text-gray-900 dark:text-white">{MESES_NOMES[i]}</td>
                     <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{m.total_horas.toFixed(1)}h</td>
                     <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{formatCurrency(m.total_bruto)}</td>
+                    <td className="py-2.5 text-right text-purple-600 dark:text-purple-400">
+                      {m.total_outros_bruto > 0 ? formatCurrency(m.total_outros_bruto) : '—'}
+                    </td>
                     <td className="py-2.5 text-right text-red-600 dark:text-red-400">-{formatCurrency(m.total_irs)}</td>
                     <td className="py-2.5 text-right font-semibold text-green-600 dark:text-green-400">{formatCurrency(m.total_liquido)}</td>
                   </tr>
@@ -292,11 +436,74 @@ export default function Financeiro() {
                   <td className="py-2.5 text-gray-900 dark:text-white">Total</td>
                   <td className="py-2.5 text-right text-gray-900 dark:text-white">{totalAnual.horas.toFixed(1)}h</td>
                   <td className="py-2.5 text-right text-gray-900 dark:text-white">{formatCurrency(totalAnual.bruto)}</td>
+                  <td className="py-2.5 text-right text-purple-600 dark:text-purple-400">{formatCurrency(totalOutrosAnual)}</td>
                   <td className="py-2.5 text-right text-red-600 dark:text-red-400">-{formatCurrency(totalAnual.irs)}</td>
                   <td className="py-2.5 text-right text-blue-600 dark:text-blue-400">{formatCurrency(totalAnual.liquido)}</td>
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          {/* Outros Rendimentos anuais */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-title">Outros Rendimentos — {anoSelecionado}</h2>
+              <button onClick={abrirCriarOutro} className="btn-primary text-sm">+ Adicionar</button>
+            </div>
+            {outrosRendimentos.length === 0 ? (
+              <p className="text-center text-gray-400 dark:text-gray-500 py-6 text-sm">
+                Sem outros rendimentos registados para {anoSelecionado}.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-gray-700">
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Descrição</th>
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Tipo</th>
+                      <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Data</th>
+                      <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Valor</th>
+                      <th className="py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {outrosRendimentos.map((r) => (
+                      <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                        <td className="py-2.5 font-medium text-gray-900 dark:text-white">{r.descricao}</td>
+                        <td className="py-2.5 text-gray-600 dark:text-gray-400">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                            {r.tipo || 'Outro'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.data ? new Date(r.data + 'T12:00:00').toLocaleDateString('pt-PT') : '—'}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold text-purple-700 dark:text-purple-300">{formatCurrency(r.valor)}</td>
+                        <td className="py-2.5 text-right">
+                          <div className="flex gap-1 justify-end">
+                            <button
+                              onClick={() => abrirEditarOutro(r)}
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline px-1"
+                            >Editar</button>
+                            <button
+                              onClick={() => handleEliminarOutro(r.id)}
+                              className="text-xs text-red-600 dark:text-red-400 hover:underline px-1"
+                            >Eliminar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-300 dark:border-gray-600">
+                      <td colSpan={3} className="py-2.5 font-bold text-gray-900 dark:text-white">Total</td>
+                      <td className="py-2.5 text-right font-bold text-purple-700 dark:text-purple-300">{formatCurrency(totalOutrosAnual)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -480,6 +687,76 @@ export default function Financeiro() {
                 className="input-field"
               />
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Outro Rendimento */}
+      <Modal
+        isOpen={modalOutro}
+        onClose={() => { setModalOutro(false); setEditandoOutro(null) }}
+        title={editandoOutro ? 'Editar Rendimento' : 'Novo Rendimento'}
+        size="md"
+        footer={
+          <>
+            <button onClick={() => { setModalOutro(false); setEditandoOutro(null) }} className="btn-secondary">Cancelar</button>
+            <button onClick={salvarOutroRendimento} className="btn-primary">Guardar</button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label-field">Descrição *</label>
+            <input
+              type="text"
+              value={formOutro.descricao}
+              onChange={e => setFormOutro(f => ({ ...f, descricao: e.target.value }))}
+              placeholder="Ex: Orientação de estágio — João Silva"
+              className="input-field"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label-field">Valor (€) *</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formOutro.valor}
+                onChange={e => setFormOutro(f => ({ ...f, valor: e.target.value }))}
+                placeholder="0.00"
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label-field">Data *</label>
+              <input
+                type="date"
+                value={formOutro.data}
+                onChange={e => setFormOutro(f => ({ ...f, data: e.target.value }))}
+                className="input-field"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label-field">Tipo</label>
+            <select
+              value={formOutro.tipo}
+              onChange={e => setFormOutro(f => ({ ...f, tipo: e.target.value }))}
+              className="input-field"
+            >
+              {TIPOS_RENDIMENTO.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label-field">Notas</label>
+            <textarea
+              rows={3}
+              value={formOutro.notas}
+              onChange={e => setFormOutro(f => ({ ...f, notas: e.target.value }))}
+              className="input-field resize-none"
+              placeholder="Observações opcionais..."
+            />
           </div>
         </div>
       </Modal>

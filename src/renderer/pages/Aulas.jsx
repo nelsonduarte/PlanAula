@@ -29,19 +29,25 @@ export default function Aulas() {
   const [form, setForm] = useState(emptyForm)
   const [filtros, setFiltros] = useState({ turma_id: '', estado: '', data_inicio: '', data_fim: '' })
   const [gerarForm, setGerarForm] = useState({ turma_id: '', data_inicio: '', data_fim: '' })
+  const [infoTurma, setInfoTurma] = useState(null) // { carga_horaria, horas_existentes }
   const [activeTab, setActiveTab] = useState('geral')
   const [configPerfil, setConfigPerfil] = useState({})
   const [exportando, setExportando] = useState(null)
+  const [diasNaoLetivos, setDiasNaoLetivos] = useState(new Set())
 
   useEffect(() => { carregarDados() }, [])
   useEffect(() => { if (form.turma_id) carregarModulosDaTurma(form.turma_id) }, [form.turma_id])
 
   async function carregarDados() {
-    const [a, t, d, cfg] = await Promise.all([db.listarAulas(filtros), db.listarTurmas(), db.listarDisciplinas(), db.obterConfiguracoes()])
+    const [a, t, d, cfg, feriados] = await Promise.all([
+      db.listarAulas(filtros), db.listarTurmas(), db.listarDisciplinas(),
+      db.obterConfiguracoes(), db.listarDiasNaoLetivos()
+    ])
     setConfigPerfil(cfg || {})
     setAulas(a || [])
     setTurmas(t || [])
     setDisciplinas(d || [])
+    setDiasNaoLetivos(new Set((feriados || []).map(f => f.data)))
   }
 
   async function carregarComFiltros() {
@@ -103,6 +109,10 @@ export default function Aulas() {
       alert('Seleccione a turma e a data')
       return
     }
+    if (diasNaoLetivos.has(form.data)) {
+      alert('Não é possível criar uma aula nesta data — é um dia não letivo ou feriado.')
+      return
+    }
     const dados = {
       ...form,
       turma_id: parseInt(form.turma_id),
@@ -124,6 +134,16 @@ export default function Aulas() {
     await carregarComFiltros()
   }
 
+  async function eliminarTodasFiltradas() {
+    if (aulas.length === 0) return
+    const confirmMsg = aulas.length === 1
+      ? 'Eliminar 1 aula?'
+      : `Eliminar ${aulas.length} aulas? Esta ação não pode ser desfeita.`
+    if (!confirm(confirmMsg)) return
+    await Promise.all(aulas.map(a => db.eliminarAula(a.id)))
+    await carregarComFiltros()
+  }
+
   async function mudarEstado(aula, estado) {
     await db.editarAula(aula.id, { ...aula, estado })
     await carregarComFiltros()
@@ -133,6 +153,24 @@ export default function Aulas() {
     setExportando(aula.id)
     await db.exportarAulaPlano(aula, configPerfil)
     setExportando(null)
+  }
+
+  async function carregarInfoTurma(turma_id) {
+    if (!turma_id) { setInfoTurma(null); return }
+    const turma = turmas.find(t => String(t.id) === String(turma_id))
+    if (!turma) { setInfoTurma(null); return }
+    // Buscar carga_horaria via disciplinas já carregadas
+    const disc = disciplinas.find(d => d.id === turma.disciplina_id)
+    const carga_horaria = disc?.carga_horaria || 0
+    // Calcular horas já planeadas para esta turma
+    const aulasExistentes = await db.listarAulas({ turma_id: parseInt(turma_id) })
+    const horas_existentes = (aulasExistentes || []).reduce((sum, a) => {
+      if (a.estado === 'Cancelada') return sum
+      const [hi, mi] = a.hora_inicio.split(':').map(Number)
+      const [hf, mf] = a.hora_fim.split(':').map(Number)
+      return sum + (hf * 60 + mf - hi * 60 - mi) / 60
+    }, 0)
+    setInfoTurma({ carga_horaria, horas_existentes, disciplina_nome: disc?.nome })
   }
 
   async function gerar() {
@@ -145,11 +183,33 @@ export default function Aulas() {
       gerarForm.data_inicio,
       gerarForm.data_fim
     )
-    if (resultado && resultado.length >= 0) {
-      alert(`${resultado.length} aulas geradas com sucesso!`)
-      setModalGerar(false)
-      await carregarComFiltros()
+    if (!resultado) {
+      alert('Erro ao gerar aulas. Verifique se a turma tem horários definidos.')
+      return
     }
+    const { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido } = resultado
+    let msg = ''
+    if (aulas.length === 0) {
+      msg = 'Nenhuma nova aula criada. Todas as aulas para os horários definidos já existem neste período.'
+    } else {
+      msg = `${aulas.length} aula(s) gerada(s) (${horas_geradas.toFixed(1)}h).`
+      if (carga_horaria > 0) {
+        const totalAgora = horas_existentes + horas_geradas
+        if (limite_atingido) {
+          msg += `\n\nCarga horária atingida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h. A geração foi interrompida para não exceder o limite.`
+        } else {
+          const faltam = carga_horaria - totalAgora
+          if (faltam > 0.05) {
+            msg += `\n\nTotal planeado: ${totalAgora.toFixed(1)}h / ${carga_horaria}h. Faltam ${faltam.toFixed(1)}h para atingir a carga horária.`
+          } else {
+            msg += `\n\nCarga horária cumprida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h.`
+          }
+        }
+      }
+    }
+    alert(msg)
+    setModalGerar(false)
+    await carregarComFiltros()
   }
 
   const tabs = [
@@ -224,7 +284,7 @@ export default function Aulas() {
             />
           </div>
         </div>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <button
             onClick={() => setFiltros({ turma_id: '', estado: '', data_inicio: '', data_fim: '' })}
             className="btn-secondary text-xs"
@@ -234,6 +294,14 @@ export default function Aulas() {
           <span className="text-sm text-gray-500 dark:text-gray-400 self-center">
             {aulas.length} aula(s) encontrada(s)
           </span>
+          {aulas.length > 0 && (
+            <button
+              onClick={eliminarTodasFiltradas}
+              className="btn-danger text-xs ml-auto"
+            >
+              Eliminar {aulas.length} aula(s)
+            </button>
+          )}
         </div>
       </div>
 
@@ -529,12 +597,12 @@ export default function Aulas() {
       {/* Modal geração automática */}
       <Modal
         isOpen={modalGerar}
-        onClose={() => setModalGerar(false)}
+        onClose={() => { setModalGerar(false); setInfoTurma(null) }}
         title="Gerar Aulas Automaticamente"
         size="md"
         footer={
           <>
-            <button onClick={() => setModalGerar(false)} className="btn-secondary">Cancelar</button>
+            <button onClick={() => { setModalGerar(false); setInfoTurma(null) }} className="btn-secondary">Cancelar</button>
             <button onClick={gerar} className="btn-primary">Gerar</button>
           </>
         }
@@ -547,7 +615,10 @@ export default function Aulas() {
             <label className="label-field">Turma *</label>
             <select
               value={gerarForm.turma_id}
-              onChange={e => setGerarForm(f => ({ ...f, turma_id: e.target.value }))}
+              onChange={e => {
+                setGerarForm(f => ({ ...f, turma_id: e.target.value }))
+                carregarInfoTurma(e.target.value)
+              }}
               className="input-field"
             >
               <option value="">Seleccionar turma...</option>
@@ -556,6 +627,26 @@ export default function Aulas() {
               ))}
             </select>
           </div>
+          {infoTurma && infoTurma.carga_horaria > 0 && (
+            <div className={`rounded-lg p-3 text-sm flex items-center justify-between ${
+              infoTurma.horas_existentes >= infoTurma.carga_horaria
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                : infoTurma.horas_existentes / infoTurma.carga_horaria >= 0.8
+                  ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
+                  : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+            }`}>
+              <div>
+                <p className="font-medium">Carga horária: {infoTurma.carga_horaria}h</p>
+                <p>Já planeadas: {infoTurma.horas_existentes.toFixed(1)}h · Disponíveis: {Math.max(0, infoTurma.carga_horaria - infoTurma.horas_existentes).toFixed(1)}h</p>
+              </div>
+              <span className="text-lg font-bold">
+                {Math.round(infoTurma.horas_existentes / infoTurma.carga_horaria * 100)}%
+              </span>
+            </div>
+          )}
+          {infoTurma && infoTurma.carga_horaria === 0 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">Sem carga horária definida — será gerado sem limite de horas.</p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label-field">Data início *</label>
