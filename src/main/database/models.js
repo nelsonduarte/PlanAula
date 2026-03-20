@@ -837,6 +837,24 @@ export function eliminarPeriodoNaoLetivo(id) {
   return { success: true }
 }
 
+// ─── Notificações ─────────────────────────────────────────────────────────────
+
+export function buscarAvaliacoesAmanha() {
+  const db = getDb()
+  const amanha = new Date()
+  amanha.setDate(amanha.getDate() + 1)
+  const data = `${amanha.getFullYear()}-${String(amanha.getMonth()+1).padStart(2,'0')}-${String(amanha.getDate()).padStart(2,'0')}`
+  return db.prepare(`
+    SELECT a.data_avaliacao, a.topico, a.hora_inicio, a.hora_fim,
+           t.designacao as turma_nome, d.nome as disciplina_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE a.data_avaliacao = ?
+    ORDER BY a.hora_inicio
+  `).all(data)
+}
+
 // ─── Pesquisa Global ──────────────────────────────────────────────────────────
 
 export function pesquisarGlobal(query) {
