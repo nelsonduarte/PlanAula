@@ -365,7 +365,13 @@ export default function Aulas() {
                           'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
                         }`}
                       >
-                        {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
+                        {(() => {
+                          const hoje = new Date(); hoje.setHours(0,0,0,0)
+                          const dataAula = new Date(aula.data + 'T00:00:00')
+                          const passou = dataAula <= hoje
+                          return ['Adiada', 'Cancelada', passou ? 'Realizada' : 'Planeada']
+                            .map(e => <option key={e} value={e}>{e}</option>)
+                        })()}
                       </select>
                       <button
                         onClick={() => exportarPlano(aula)}
