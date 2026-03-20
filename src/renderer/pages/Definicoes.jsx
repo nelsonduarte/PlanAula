@@ -117,6 +117,196 @@ function DiasNaoLetivos({ db }) {
   )
 }
 
+function ProfessorCargos({ db }) {
+  const [cargos, setCargos] = useState([])
+  const [instituicoes, setInstituicoes] = useState([])
+  const [showForm, setShowForm] = useState(false)
+  const [editando, setEditando] = useState(null)
+  const emptyForm = { instituicao_id: '', instituicao_nome: '', departamento: '', cargo: '', ativo: true }
+  const [form, setForm] = useState(emptyForm)
+
+  useEffect(() => { carregar() }, [])
+
+  async function carregar() {
+    const [c, i] = await Promise.all([db.listarProfessorCargos(), db.listarInstituicoes()])
+    setCargos(c || [])
+    setInstituicoes(i || [])
+  }
+
+  function abrirAdicionar() {
+    setEditando(null)
+    setForm(emptyForm)
+    setShowForm(true)
+  }
+
+  function abrirEditar(cargo) {
+    setEditando(cargo.id)
+    setForm({
+      instituicao_id: cargo.instituicao_id || '',
+      instituicao_nome: cargo.instituicao_nome || '',
+      departamento: cargo.departamento || '',
+      cargo: cargo.cargo || '',
+      ativo: cargo.ativo !== 0
+    })
+    setShowForm(true)
+  }
+
+  function handleInstituicaoChange(id) {
+    const inst = instituicoes.find(i => String(i.id) === String(id))
+    setForm(f => ({
+      ...f,
+      instituicao_id: id,
+      instituicao_nome: inst ? inst.nome : f.instituicao_nome
+    }))
+  }
+
+  async function guardar() {
+    if (!form.instituicao_nome.trim()) return
+    const dados = {
+      ...form,
+      instituicao_id: form.instituicao_id || null,
+      ativo: form.ativo ? 1 : 0
+    }
+    if (editando) {
+      await db.editarProfessorCargo(editando, dados)
+    } else {
+      await db.criarProfessorCargo(dados)
+    }
+    setShowForm(false)
+    setEditando(null)
+    await carregar()
+  }
+
+  async function eliminar(id) {
+    await db.eliminarProfessorCargo(id)
+    await carregar()
+  }
+
+  async function toggleAtivo(cargo) {
+    await db.editarProfessorCargo(cargo.id, {
+      instituicao_id: cargo.instituicao_id || null,
+      instituicao_nome: cargo.instituicao_nome,
+      departamento: cargo.departamento,
+      cargo: cargo.cargo,
+      ativo: cargo.ativo ? 0 : 1
+    })
+    await carregar()
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <label className="label-field mb-0">Instituições e Cargos</label>
+        <button onClick={abrirAdicionar} className="btn-secondary text-sm px-3 py-1.5">+ Adicionar</button>
+      </div>
+
+      {cargos.length === 0 && !showForm && (
+        <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+          Sem instituições ou cargos adicionados
+        </p>
+      )}
+
+      {cargos.length > 0 && (
+        <div className="space-y-1 mb-3">
+          {cargos.map(c => (
+            <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${c.ativo ? 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 opacity-60'}`}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{c.instituicao_nome}</span>
+                  {!c.ativo && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">inativo</span>}
+                </div>
+                {(c.departamento || c.cargo) && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                    {[c.cargo, c.departamento].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button onClick={() => toggleAtivo(c)} title={c.ativo ? 'Desativar' : 'Ativar'} className="p-1.5 rounded text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={c.ativo ? "M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" : "M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"} /><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </button>
+                <button onClick={() => abrirEditar(c)} className="p-1.5 rounded text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+                <button onClick={() => eliminar(c.id)} className="p-1.5 rounded text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="border border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/10 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label-field">Instituição</label>
+              {instituicoes.length > 0 ? (
+                <select
+                  value={form.instituicao_id}
+                  onChange={e => handleInstituicaoChange(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="">— Outra / Manual —</option>
+                  {instituicoes.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                </select>
+              ) : null}
+              {(!form.instituicao_id) && (
+                <input
+                  type="text"
+                  value={form.instituicao_nome}
+                  onChange={e => setForm(f => ({ ...f, instituicao_nome: e.target.value }))}
+                  placeholder="Nome da instituição"
+                  className={`input-field ${instituicoes.length > 0 ? 'mt-2' : ''}`}
+                />
+              )}
+            </div>
+            <div>
+              <label className="label-field">Cargo / Função</label>
+              <input
+                type="text"
+                value={form.cargo}
+                onChange={e => setForm(f => ({ ...f, cargo: e.target.value }))}
+                placeholder="ex: Professor Auxiliar"
+                className="input-field"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label-field">Departamento / Escola</label>
+            <input
+              type="text"
+              value={form.departamento}
+              onChange={e => setForm(f => ({ ...f, departamento: e.target.value }))}
+              placeholder="ex: Dep. de Informática"
+              className="input-field"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="cargo_ativo"
+              checked={form.ativo}
+              onChange={e => setForm(f => ({ ...f, ativo: e.target.checked }))}
+              className="w-4 h-4 rounded text-blue-600"
+            />
+            <label htmlFor="cargo_ativo" className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">Posição activa</label>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={guardar} className="btn-primary text-sm">
+              {editando ? 'Guardar alterações' : 'Adicionar'}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditando(null) }} className="btn-secondary text-sm">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Definicoes() {
   const db = useDatabase()
   const { confirm, dialog, handleOk, handleCancel } = useDialog()
@@ -125,8 +315,6 @@ export default function Definicoes() {
   const [config, setConfig] = useState({
     tema: 'light',
     nome_professor: '',
-    instituicao: '',
-    departamento: '',
     ano_letivo_atual: `${anoAtual}/${anoAtual + 1}`
   })
 
@@ -153,8 +341,6 @@ export default function Definicoes() {
         ...prev,
         tema: cfg.tema || 'light',
         nome_professor: cfg.nome_professor || '',
-        instituicao: cfg.instituicao || '',
-        departamento: cfg.departamento || '',
         ano_letivo_atual: cfg.ano_letivo_atual || `${anoAtual}/${anoAtual + 1}`
       }))
     }
@@ -187,8 +373,6 @@ export default function Definicoes() {
     await db.salvarConfiguracoes({
       tema: config.tema,
       nome_professor: config.nome_professor,
-      instituicao: config.instituicao,
-      departamento: config.departamento,
       ano_letivo_atual: config.ano_letivo_atual
     })
     aplicarTema(config.tema)
@@ -283,26 +467,7 @@ export default function Definicoes() {
               className="input-field"
             />
           </div>
-          <div>
-            <label className="label-field">Instituição</label>
-            <input
-              type="text"
-              value={config.instituicao}
-              onChange={e => setConfig(c => ({ ...c, instituicao: e.target.value }))}
-              placeholder="Nome da instituição"
-              className="input-field"
-            />
-          </div>
-          <div>
-            <label className="label-field">Departamento</label>
-            <input
-              type="text"
-              value={config.departamento}
-              onChange={e => setConfig(c => ({ ...c, departamento: e.target.value }))}
-              placeholder="Departamento ou escola"
-              className="input-field"
-            />
-          </div>
+          <ProfessorCargos db={db} />
           <div>
             <label className="label-field">Ano Lectivo Actual</label>
             <input

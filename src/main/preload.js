@@ -126,6 +126,14 @@ contextBridge.exposeInMainWorld('api', {
   },
 
 
+  // Professor Cargos
+  professorCargos: {
+    listar: () => invoke('professorCargos:listar'),
+    criar: (dados) => invoke('professorCargos:criar', dados),
+    editar: (id, dados) => invoke('professorCargos:editar', { id, dados }),
+    eliminar: (id) => invoke('professorCargos:eliminar', id),
+  },
+
   // Outros Rendimentos
   outrosRendimentos: {
     listar: (filtros) => invoke('outrosRendimentos:listar', filtros),

@@ -192,4 +192,19 @@ export function runMigrations() {
       )
     `)
   }
+
+  // Nova tabela: professor_cargos (múltiplas instituições e cargos do professor)
+  if (!tabelasExistentes.includes('professor_cargos')) {
+    db.exec(`
+      CREATE TABLE professor_cargos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instituicao_id INTEGER REFERENCES instituicoes(id) ON DELETE SET NULL,
+        instituicao_nome TEXT NOT NULL,
+        departamento TEXT,
+        cargo TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+  }
 }

@@ -602,6 +602,20 @@ export function registerHandlers() {
     try { return { success: true, data: models.eliminarCurso(id) } } catch (e) { return { success: false, error: e.message } }
   })
 
+  // ─── Professor Cargos ─────────────────────────────────────────────────────
+  ipcMain.handle('professorCargos:listar', async () => {
+    try { return { success: true, data: models.listarProfessorCargos() } } catch (e) { return { success: false, error: e.message } }
+  })
+  ipcMain.handle('professorCargos:criar', async (_, dados) => {
+    try { return { success: true, data: models.criarProfessorCargo(dados) } } catch (e) { return { success: false, error: e.message } }
+  })
+  ipcMain.handle('professorCargos:editar', async (_, { id, dados }) => {
+    try { return { success: true, data: models.editarProfessorCargo(id, dados) } } catch (e) { return { success: false, error: e.message } }
+  })
+  ipcMain.handle('professorCargos:eliminar', async (_, id) => {
+    try { return { success: true, data: models.eliminarProfessorCargo(id) } } catch (e) { return { success: false, error: e.message } }
+  })
+
   // ─── Outros Rendimentos ──────────────────────────────────────────────────
   ipcMain.handle('outrosRendimentos:listar', async (_, filtros) => {
     try { return { success: true, data: models.listarOutrosRendimentos(filtros) } }

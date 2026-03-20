@@ -304,6 +304,12 @@ export function useDatabase() {
     { success: false, error: 'Não disponível fora do Electron' }
   )
 
+  // Professor Cargos
+  const listarProfessorCargos = () => execute(() => window.api.professorCargos.listar(), [])
+  const criarProfessorCargo = (dados) => execute(() => window.api.professorCargos.criar(dados), { id: Date.now(), ...dados })
+  const editarProfessorCargo = (id, dados) => execute(() => window.api.professorCargos.editar(id, dados), { id, ...dados })
+  const eliminarProfessorCargo = (id) => execute(() => window.api.professorCargos.eliminar(id), { success: true })
+
   // Outros Rendimentos
   const listarOutrosRendimentos = (filtros) => execute(
     () => window.api.outrosRendimentos.listar(filtros),
@@ -339,6 +345,7 @@ export function useDatabase() {
     exportarAulaPlano, exportarRelatorioFinanceiro, exportarRelatorioTurma, imprimirCalendario,
     pesquisarGlobal, reiniciarApp,
     exportarBackup, importarBackup,
+    listarProfessorCargos, criarProfessorCargo, editarProfessorCargo, eliminarProfessorCargo,
     listarOutrosRendimentos, criarOutroRendimento, editarOutroRendimento, eliminarOutroRendimento,
     listarPeriodosNaoLetivos, criarPeriodoNaoLetivo, eliminarPeriodoNaoLetivo
   }

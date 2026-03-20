@@ -206,7 +206,12 @@ export function listarAulas(filtros = {}) {
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
-    LEFT JOIN horarios h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
+    LEFT JOIN (
+      SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
+      FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+    ) h ON h.turma_id = a.turma_id
+          AND h.hora_inicio = a.hora_inicio
+          AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
     WHERE 1=1
   `
   const params = []
@@ -390,7 +395,7 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
           hora_inicio: h.hora_inicio, hora_fim: horaFim,
           topico: '', objetivos: null, conteudos: null,
           atividades: null, recursos: null, avaliacao: null,
-          notas: null, estado: 'Planeada'
+          notas: null, estado: 'Planeada', data_avaliacao: null
         })
         aulas.push(a)
         horas_geradas += duracaoReal
@@ -481,6 +486,44 @@ export function editarCurso(id, dados) {
 export function eliminarCurso(id) {
   const db = getDb()
   db.prepare('DELETE FROM cursos WHERE id = ?').run(id)
+  return { success: true }
+}
+
+// ─── Professor Cargos ─────────────────────────────────────────────────────────
+
+export function listarProfessorCargos() {
+  const db = getDb()
+  return db.prepare(`
+    SELECT pc.*, i.nome as instituicao_nome_ref
+    FROM professor_cargos pc
+    LEFT JOIN instituicoes i ON i.id = pc.instituicao_id
+    ORDER BY pc.ativo DESC, pc.instituicao_nome
+  `).all()
+}
+
+export function criarProfessorCargo(dados) {
+  const db = getDb()
+  const result = db.prepare(`
+    INSERT INTO professor_cargos (instituicao_id, instituicao_nome, departamento, cargo, ativo)
+    VALUES (@instituicao_id, @instituicao_nome, @departamento, @cargo, @ativo)
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null, ativo: dados.ativo ?? 1 })
+  return { id: result.lastInsertRowid, ...dados }
+}
+
+export function editarProfessorCargo(id, dados) {
+  const db = getDb()
+  db.prepare(`
+    UPDATE professor_cargos
+    SET instituicao_id=@instituicao_id, instituicao_nome=@instituicao_nome,
+        departamento=@departamento, cargo=@cargo, ativo=@ativo
+    WHERE id=@id
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null, id })
+  return db.prepare('SELECT * FROM professor_cargos WHERE id = ?').get(id)
+}
+
+export function eliminarProfessorCargo(id) {
+  const db = getDb()
+  db.prepare('DELETE FROM professor_cargos WHERE id = ?').run(id)
   return { success: true }
 }
 
