@@ -26,14 +26,20 @@ function gerarTemplate() {
     ['3. Datas: aceita AAAA-MM-DD (2025-09-01), DD-MM-AAAA (01-09-2025) ou o formato de data do Excel.'],
     ['4. Dia da semana: 0=Domingo  1=Segunda  2=Terça  3=Quarta  4=Quinta  5=Sexta  6=Sábado.'],
     ['5. Horas no formato HH:MM (ex: 09:00).'],
+    ['6. Cor das turmas em formato hexadecimal (ex: #2E86C1). Deixe em branco para usar a cor padrão.'],
     [''],
-    ['ORDEM DE IMPORTAÇÃO (os nomes devem corresponder EXACTAMENTE):'],
-    ['  Instituições  →  Cursos  →  Disciplinas  →  Turmas  →  Horários  →  Aulas (geradas automaticamente)'],
+    ['ORDEM DE IMPORTAÇÃO:'],
+    ['  Configurações  →  Instituições  →  Períodos Não Letivos  →  Cursos'],
+    ['  →  Disciplinas  →  Módulos  →  Turmas  →  Horários  →  Valores Hora'],
+    ['  →  Aulas (geradas automaticamente)'],
     [''],
+    ['  • Períodos Não Letivos referenciam "instituicao_nome" de Instituições (opcional)'],
     ['  • Cursos      referenciam "instituicao_nome" de Instituições'],
     ['  • Disciplinas referenciam "curso_nome" de Cursos'],
+    ['  • Módulos     referenciam "disciplina_nome" de Disciplinas'],
     ['  • Turmas      referenciam "disciplina_nome" de Disciplinas'],
-    ['  • Horários    referenciam "turma_nome" de Turmas'],
+    ['  • Horários    referenciam "turma_designacao" + "disciplina_nome" de Turmas'],
+    ['  • Valores Hora referenciam "disciplina_nome" e opcionalmente "turma_designacao"'],
     [''],
     ['  GERAÇÃO AUTOMÁTICA DE AULAS:'],
     ['  Após importar os Horários, as aulas são geradas automaticamente para todas as turmas'],
@@ -46,42 +52,73 @@ function gerarTemplate() {
   wsInst['!cols'] = [{ wch: 80 }]
   XLSX.utils.book_append_sheet(wb, wsInst, 'Instruções')
 
+  // ── Configurações ──
+  const wsCfg = XLSX.utils.aoa_to_sheet([
+    ['nome_professor', 'instituicao', 'departamento', 'ano_letivo_atual'],
+    ['Prof. João Silva', 'Universidade do Porto', 'Departamento de Informática', '2025/2026'],
+  ])
+  wsCfg['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 35 }, { wch: 14 }]
+  XLSX.utils.book_append_sheet(wb, wsCfg, 'Configurações')
+
   // ── Instituições ──
   const wsI = XLSX.utils.aoa_to_sheet([
-    ['nome *'],
-    ['Universidade do Porto'],
-    ['Instituto Politécnico de Coimbra'],
+    ['nome *', 'tipo', 'contacto', 'notas'],
+    ['Universidade do Porto', 'universitária', 'geral@up.pt', ''],
+    ['Instituto Politécnico de Coimbra', 'politécnica', 'geral@ipc.pt', ''],
   ])
-  wsI['!cols'] = [{ wch: 40 }]
+  wsI['!cols'] = [{ wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 30 }]
   XLSX.utils.book_append_sheet(wb, wsI, 'Instituições')
+
+  // ── Períodos Não Letivos ──
+  const wsPNL = XLSX.utils.aoa_to_sheet([
+    ['descricao *', 'data_inicio *', 'data_fim *', 'tipo', 'instituicao_nome'],
+    ['Natal', '2025-12-22', '2026-01-05', 'férias', ''],
+    ['Carnaval', '2026-02-16', '2026-02-18', 'férias', ''],
+    ['Páscoa', '2026-04-02', '2026-04-13', 'férias', ''],
+    ['Verão', '2026-07-01', '2026-09-14', 'férias', 'Universidade do Porto'],
+  ])
+  wsPNL['!cols'] = [{ wch: 25 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 35 }]
+  XLSX.utils.book_append_sheet(wb, wsPNL, 'Períodos Não Letivos')
 
   // ── Cursos ──
   const wsC = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'instituicao_nome *', 'ano_letivo', 'valor_hora'],
-    ['Engenharia Informática', 'Universidade do Porto', '2025/2026', 25],
-    ['Gestão e Administração', 'Instituto Politécnico de Coimbra', '2025/2026', 20],
+    ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'valor_hora', 'descricao'],
+    ['Engenharia Informática', 'Universidade do Porto', 'semestral', '2025/2026', 25, ''],
+    ['Gestão e Administração', 'Instituto Politécnico de Coimbra', 'semestral', '2025/2026', 20, ''],
   ])
-  wsC['!cols'] = [{ wch: 35 }, { wch: 35 }, { wch: 12 }, { wch: 12 }]
+  wsC['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
   XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
 
   // ── Disciplinas ──
   const wsD = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'codigo', 'tipo', 'ects', 'carga_horaria', 'descricao', 'curso_nome *', 'instituicao_nome *'],
-    ['Programação Web', 'PW101', 'Teórica', 6, 60, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Bases de Dados', 'BD102', 'Teórico-Prática', 4, 45, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Gestão de Projetos', 'GP201', 'Seminário', 3, 30, '', 'Gestão e Administração', 'Instituto Politécnico de Coimbra'],
+    ['nome *', 'codigo', 'tipo', 'area_cientifica', 'ects', 'carga_horaria', 'descricao', 'curso_nome *'],
+    ['Programação Web', 'PW101', 'Teórica', 'Informática', 6, 60, '', 'Engenharia Informática'],
+    ['Bases de Dados', 'BD102', 'Teórico-Prática', 'Informática', 4, 45, '', 'Engenharia Informática'],
+    ['Gestão de Projetos', 'GP201', 'Seminário', 'Gestão', 3, 30, '', 'Gestão e Administração'],
   ])
-  wsD['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 6 }, { wch: 14 }, { wch: 20 }, { wch: 28 }, { wch: 35 }]
+  wsD['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 6 }, { wch: 14 }, { wch: 20 }, { wch: 28 }]
   XLSX.utils.book_append_sheet(wb, wsD, 'Disciplinas')
+
+  // ── Módulos ──
+  const wsMod = XLSX.utils.aoa_to_sheet([
+    ['disciplina_nome *', 'nome *', 'ordem', 'horas', 'objetivos'],
+    ['Programação Web', 'HTML e CSS', 1, 10, 'Construir páginas web estáticas'],
+    ['Programação Web', 'JavaScript', 2, 20, 'Programação client-side'],
+    ['Programação Web', 'Frameworks', 3, 30, 'React e Vue.js'],
+    ['Bases de Dados', 'Modelo Relacional', 1, 15, 'Modelação de dados'],
+    ['Bases de Dados', 'SQL', 2, 20, 'Consultas e manipulação de dados'],
+  ])
+  wsMod['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 40 }]
+  XLSX.utils.book_append_sheet(wb, wsMod, 'Módulos')
 
   // ── Turmas ──
   const wsT = XLSX.utils.aoa_to_sheet([
-    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre'],
-    ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1],
-    ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2],
-    ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1],
+    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre', 'cor'],
+    ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1, '#2E86C1'],
+    ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2, '#27AE60'],
+    ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1, '#8E44AD'],
   ])
-  wsT['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }]
+  wsT['!cols'] = [{ wch: 18 }, { wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 10 }]
   XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
 
   // ── Horários ──
@@ -92,8 +129,18 @@ function gerarTemplate() {
     ['Turma B', 'Programação Web', 3, '10:00', '12:00', 'Sala 203'],
     ['Turma A', 'Bases de Dados', 5, '09:00', '11:00', 'Sala 205'],
   ])
-  wsH['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 14 }, { wch: 13 }, { wch: 13 }]
+  wsH['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
   XLSX.utils.book_append_sheet(wb, wsH, 'Horários')
+
+  // ── Valores Hora ──
+  const wsVH = XLSX.utils.aoa_to_sheet([
+    ['disciplina_nome *', 'turma_designacao', 'valor_hora *', 'ano_letivo *'],
+    ['Programação Web', 'Turma A', 30, '2025/2026'],
+    ['Programação Web', 'Turma B', 30, '2025/2026'],
+    ['Bases de Dados', '', 25, '2025/2026'],
+  ])
+  wsVH['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 12 }]
+  XLSX.utils.book_append_sheet(wb, wsVH, 'Valores Hora')
 
   XLSX.writeFile(wb, 'PlanAula_Template.xlsx')
 }
@@ -160,6 +207,23 @@ async function importarWorkbook(wb, setProgresso) {
   function err(msg) { erros.push(msg); setProgresso(p => [...p, { tipo: 'err', msg }]) }
   function info(msg) { setProgresso(p => [...p, { tipo: 'info', msg }]) }
 
+  // ── Configurações ──
+  info('A importar Configurações…')
+  const rowsCfg = parseSheet(wb, 'Configurações')
+  if (rowsCfg.length > 0) {
+    const row = rowsCfg[0]
+    const campos = ['nome_professor', 'instituicao', 'departamento', 'ano_letivo_atual']
+    for (const chave of campos) {
+      const valor = norm(row, chave)
+      if (valor) {
+        try {
+          await ipc(() => window.api.configuracoes.salvar({ chave, valor }))
+          ok(`Configuração guardada: ${chave} = ${valor}`)
+        } catch (e) { err(`Configuração "${chave}": ${e.message}`) }
+      }
+    }
+  }
+
   // ── Instituições ──
   info('A importar Instituições…')
   const rowsI = parseSheet(wb, 'Instituições')
@@ -172,11 +236,43 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
-      await ipc(() => window.api.instituicoes.criar({ nome, tipo: 'universitária', contacto: null, notas: null }))
+      await ipc(() => window.api.instituicoes.criar({
+        nome,
+        tipo: norm(row, 'tipo') || 'universitária',
+        contacto: norm(row, 'contacto') || null,
+        notas: norm(row, 'notas') || null,
+      }))
       ok(`Instituição criada: ${nome}`)
     } catch (e) { err(`Instituição "${nome}": ${e.message}`) }
   }
   instituicoes = await ipc(() => window.api.instituicoes.listar())
+
+  // ── Períodos Não Letivos ──
+  info('A importar Períodos Não Letivos…')
+  const rowsPNL = parseSheet(wb, 'Períodos Não Letivos')
+  const periodosExist = await ipc(() => window.api.periodosNaoLetivos.listar())
+  for (const row of rowsPNL) {
+    const descricao = norm(row, 'descricao')
+    const dataInicio = normDate(row, 'data_inicio')
+    const dataFim = normDate(row, 'data_fim')
+    if (!descricao || !dataInicio || !dataFim) continue
+    if (periodosExist.find(p => p.descricao === descricao && p.data_inicio === dataInicio)) {
+      ok(`Período já existe: ${descricao} (${dataInicio})`)
+      continue
+    }
+    const instNome = norm(row, 'instituicao_nome')
+    const inst = instNome ? instituicoes.find(i => i.nome === instNome) : null
+    try {
+      await ipc(() => window.api.periodosNaoLetivos.criar({
+        descricao,
+        data_inicio: dataInicio,
+        data_fim: dataFim,
+        tipo: norm(row, 'tipo') || 'férias',
+        instituicao_id: inst?.id || null,
+      }))
+      ok(`Período criado: ${descricao} (${dataInicio} → ${dataFim})`)
+    } catch (e) { err(`Período "${descricao}": ${e.message}`) }
+  }
 
   // ── Cursos ──
   info('A importar Cursos…')
@@ -199,10 +295,10 @@ async function importarWorkbook(wb, setProgresso) {
       await ipc(() => window.api.cursos.criar({
         nome,
         instituicao_id: inst?.id || null,
-        tipo: 'semestral',
+        tipo: norm(row, 'tipo') || 'semestral',
         ano_letivo: norm(row, 'ano_letivo') || null,
         valor_hora: normNum(row, 'valor_hora') || null,
-        descricao: null,
+        descricao: norm(row, 'descricao') || null,
         ativo: 1,
       }))
       ok(`Curso criado: ${nome}`)
@@ -233,7 +329,7 @@ async function importarWorkbook(wb, setProgresso) {
       await ipc(() => window.api.disciplinas.criar({
         nome,
         codigo: norm(row, 'codigo') || null,
-        area_cientifica: '',
+        area_cientifica: norm(row, 'area_cientifica') || '',
         carga_horaria: normNum(row, 'carga_horaria', 0),
         ects: normNum(row, 'ects'),
         tipo,
@@ -244,6 +340,35 @@ async function importarWorkbook(wb, setProgresso) {
     } catch (e) { err(`Disciplina "${nome}": ${e.message}`) }
   }
   disciplinas = await ipc(() => window.api.disciplinas.listar())
+
+  // ── Módulos ──
+  info('A importar Módulos…')
+  const rowsMod = parseSheet(wb, 'Módulos')
+  for (const row of rowsMod) {
+    const discNome = norm(row, 'disciplina_nome')
+    const nome = norm(row, 'nome')
+    if (!discNome || !nome) continue
+    const disc = disciplinas.find(d => d.nome === discNome)
+    if (!disc) {
+      err(`Módulo "${nome}": disciplina "${discNome}" não encontrada`)
+      continue
+    }
+    try {
+      const modulosExist = await ipc(() => window.api.modulos.listar(disc.id))
+      if (modulosExist.find(m => m.nome === nome)) {
+        ok(`Módulo já existe: ${nome} (${discNome})`)
+        continue
+      }
+      await ipc(() => window.api.modulos.criar({
+        disciplina_id: disc.id,
+        nome,
+        ordem: normNum(row, 'ordem', 0),
+        horas: normNum(row, 'horas', 0) || null,
+        objetivos: norm(row, 'objetivos') || null,
+      }))
+      ok(`Módulo criado: ${nome} (${discNome})`)
+    } catch (e) { err(`Módulo "${nome}": ${e.message}`) }
+  }
 
   // ── Turmas ──
   info('A importar Turmas…')
@@ -289,7 +414,7 @@ async function importarWorkbook(wb, setProgresso) {
         data_inicio: normDate(row, 'data_inicio') || null,
         data_fim: normDate(row, 'data_fim') || null,
         carga_horaria: normNum(row, 'carga_horaria', 0),
-        cor: '#2E86C1',
+        cor: norm(row, 'cor') || '#2E86C1',
       }))
       ok(`Turma criada: ${designacao} (${discNome})`)
     } catch (e) { err(`Turma "${designacao}": ${e.message}`) }
@@ -348,6 +473,37 @@ async function importarWorkbook(wb, setProgresso) {
       }))
       ok(`Horário criado: ${turmaDesig} — dia ${diaSemana} ${horaInicio}-${horaFim}`)
     } catch (e) { err(`Horário "${turmaDesig}": ${e.message}`) }
+  }
+
+  // ── Valores Hora ──
+  info('A importar Valores Hora…')
+  const rowsVH = parseSheet(wb, 'Valores Hora')
+  turmas = await ipc(() => window.api.turmas.listar())
+  for (const row of rowsVH) {
+    const discNome = norm(row, 'disciplina_nome')
+    const turmaDesig = norm(row, 'turma_designacao')
+    const valorHora = normNum(row, 'valor_hora', 0)
+    const anoLetivo = norm(row, 'ano_letivo')
+    if (!discNome || !valorHora || !anoLetivo) continue
+    const disc = disciplinas.find(d => d.nome === discNome)
+    if (!disc) {
+      err(`Valor hora: disciplina "${discNome}" não encontrada`)
+      continue
+    }
+    const turma = turmaDesig ? turmas.find(t => t.designacao === turmaDesig && t.disciplina_id === disc.id) : null
+    if (turmaDesig && !turma) {
+      err(`Valor hora: turma "${turmaDesig}" (${discNome}) não encontrada`)
+      continue
+    }
+    try {
+      await ipc(() => window.api.financeiro.salvarValorHora({
+        disciplina_id: disc.id,
+        turma_id: turma?.id || null,
+        valor_hora: valorHora,
+        ano_letivo: anoLetivo,
+      }))
+      ok(`Valor hora: ${discNome}${turma ? ` / ${turmaDesig}` : ''} = ${valorHora}€/h (${anoLetivo})`)
+    } catch (e) { err(`Valor hora "${discNome}": ${e.message}`) }
   }
 
   // ── Gerar Aulas Automaticamente ──
@@ -492,11 +648,15 @@ export default function Importar() {
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Estrutura do Template</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           {[
-            { sheet: 'Instituições', campos: 'nome' },
-            { sheet: 'Cursos', campos: 'nome, instituicao_nome, ano_letivo, valor_hora' },
-            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, ects, carga_horaria, descricao, curso_nome, instituicao_nome' },
-            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre' },
+            { sheet: 'Configurações', campos: 'nome_professor, instituicao, departamento, ano_letivo_atual' },
+            { sheet: 'Instituições', campos: 'nome, tipo, contacto, notas' },
+            { sheet: 'Períodos Não Letivos', campos: 'descricao, data_inicio, data_fim, tipo, instituicao_nome' },
+            { sheet: 'Cursos', campos: 'nome, instituicao_nome, tipo, ano_letivo, valor_hora, descricao' },
+            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, area_cientifica, ects, carga_horaria, descricao, curso_nome' },
+            { sheet: 'Módulos', campos: 'disciplina_nome, nome, ordem, horas, objetivos' },
+            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre, cor' },
             { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana, hora_inicio, hora_fim, sala' },
+            { sheet: 'Valores Hora', campos: 'disciplina_nome, turma_designacao, valor_hora, ano_letivo' },
           ].map(({ sheet, campos }) => (
             <div key={sheet} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
               <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{sheet}</p>
