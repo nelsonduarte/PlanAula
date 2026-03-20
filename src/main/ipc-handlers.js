@@ -559,6 +559,11 @@ export function registerHandlers() {
     } catch (e) { return { success: false, error: e.message } }
   })
 
+  ipcMain.handle('export:calendarioHTML', async (_, { html, nome }) => {
+    try { return await imprimirPDF(html, nome) }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   ipcMain.handle('export:relatorioFinanceiro', async (_, { dados, tipo, ano, mes, config }) => {
     try {
       const html = gerarHTMLRelatorioFinanceiro(dados, tipo, ano, mes, config || {})

@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('api', {
     aulaPlano: (aula, config) => invoke('export:aulaPlano', { aula, config }),
     relatorioFinanceiro: (dados, tipo, ano, mes, config) =>
       invoke('export:relatorioFinanceiro', { dados, tipo, ano, mes, config }),
+    calendarioHTML: (html, nome) => invoke('export:calendarioHTML', { html, nome }),
     relatorioTurma: (turma, horarios, aulas, config) =>
       invoke('export:relatorioTurma', { turma, horarios, aulas, config }),
   },

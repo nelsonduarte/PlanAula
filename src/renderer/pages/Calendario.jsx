@@ -49,6 +49,10 @@ export default function Calendario() {
       const mes = dataAtual.getMonth()
       data_inicio = toDateStr(new Date(ano, mes, 1))
       data_fim = toDateStr(new Date(ano, mes + 1, 0))
+    } else if (vista === 'anual') {
+      const ano = dataAtual.getFullYear()
+      data_inicio = `${ano}-01-01`
+      data_fim = `${ano}-12-31`
     } else {
       const start = new Date(dataAtual)
       const day = start.getDay()
@@ -127,6 +131,7 @@ export default function Calendario() {
   function navAnterior() {
     const d = new Date(dataAtual)
     if (vista === 'mensal') d.setMonth(d.getMonth() - 1)
+    else if (vista === 'anual') d.setFullYear(d.getFullYear() - 1)
     else d.setDate(d.getDate() - 7)
     setDataAtual(d)
   }
@@ -134,6 +139,7 @@ export default function Calendario() {
   function navSeguinte() {
     const d = new Date(dataAtual)
     if (vista === 'mensal') d.setMonth(d.getMonth() + 1)
+    else if (vista === 'anual') d.setFullYear(d.getFullYear() + 1)
     else d.setDate(d.getDate() + 7)
     setDataAtual(d)
   }
@@ -216,6 +222,115 @@ export default function Calendario() {
   const diasMes = getDiasMes()
   const diasSemana = getDiasSemana()
 
+  // Mini-calendar helper for annual view
+  function getDiasMiniMes(ano, mes) {
+    const firstDay = new Date(ano, mes, 1)
+    const lastDay = new Date(ano, mes + 1, 0)
+    let startDay = firstDay.getDay()
+    if (startDay === 0) startDay = 7
+    startDay -= 1
+    const dias = []
+    for (let i = 0; i < startDay; i++) dias.push(null)
+    for (let d = 1; d <= lastDay.getDate(); d++) dias.push(new Date(ano, mes, d))
+    while (dias.length % 7 !== 0) dias.push(null)
+    return dias
+  }
+
+  function gerarHTMLCalendario() {
+    const ano = dataAtual.getFullYear()
+    const mes = dataAtual.getMonth()
+    const rodape = `<div style="margin-top:12px;border-top:1px solid #e5e7eb;padding-top:6px;font-size:7pt;color:#9ca3af;display:flex;justify-content:space-between"><span>PlanAula</span><span>Gerado em ${new Date().toLocaleDateString('pt-PT')}</span></div>`
+    const baseStyle = `* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'Segoe UI',Arial,sans-serif; font-size:9pt; padding:20px; }`
+
+    if (vista === 'mensal') {
+      const titulo = `${MESES[mes]} ${ano}`
+      const headers = DIAS_SEMANA_CURTO_MON.map(d => `<th style="background:#f3f4f6;padding:5px;text-align:center;font-size:8pt;font-weight:600;border:1px solid #e5e7eb;color:#6b7280;text-transform:uppercase">${d}</th>`).join('')
+      const rows = []
+      for (let i = 0; i < diasMes.length; i += 7) {
+        const cells = diasMes.slice(i, i + 7).map(item => {
+          const dateStr = toDateStr(item.date)
+          const aulasNoDia = getAulasDoDia(dateStr)
+          const feriado = diasNaoLetivos[dateStr]
+          const bg = feriado ? (feriado.tipoCor === 'periodo' ? '#fffbeb' : '#fef2f2') : (item.currentMonth ? 'white' : '#f9fafb')
+          const numColor = item.currentMonth ? (dateStr === hojeStr ? '#2563eb' : '#111827') : '#d1d5db'
+          return `<td style="background:${bg};border:1px solid #e5e7eb;padding:4px;vertical-align:top;min-height:75px;width:14.2%">
+            <div style="font-weight:700;font-size:10pt;color:${numColor};margin-bottom:3px">${item.date.getDate()}</div>
+            ${feriado ? `<div style="font-size:6.5pt;color:${feriado.tipoCor === 'periodo' ? '#d97706' : '#dc2626'};margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${feriado.descricao}</div>` : ''}
+            ${aulasNoDia.map(a => `<div style="background:${a.turma_cor || '#3B82F6'};color:white;padding:1px 3px;border-radius:2px;font-size:6.5pt;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.hora_inicio} ${a.disciplina_nome}${a.topico ? ' · ' + a.topico : ''}</div>`).join('')}
+          </td>`
+        }).join('')
+        rows.push(`<tr>${cells}</tr>`)
+      }
+      return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><style>${baseStyle} h1{text-align:center;font-size:14pt;margin-bottom:12px;color:#111827;} table{width:100%;border-collapse:collapse;}</style></head><body>
+        <h1>Calendário — ${titulo}</h1>
+        <table><thead><tr>${headers}</tr></thead><tbody>${rows.join('')}</tbody></table>
+        ${rodape}</body></html>`
+    }
+
+    if (vista === 'semanal') {
+      const dias = getDiasSemana()
+      const titulo = `Semana ${dias[0].getDate()}–${dias[6].getDate()} ${MESES[dias[6].getMonth()]} ${dias[6].getFullYear()}`
+      const cols = dias.map((dia, i) => {
+        const diaStr = toDateStr(dia)
+        const aulasNoDia = getAulasDoDia(diaStr)
+        const feriado = diasNaoLetivos[diaStr]
+        const isHoje = diaStr === hojeStr
+        return `<td style="border:1px solid #e5e7eb;padding:6px;vertical-align:top;width:14.2%;background:${isHoje ? '#eff6ff' : 'white'}">
+          <div style="font-weight:700;font-size:9.5pt;color:${isHoje ? '#2563eb' : '#374151'};margin-bottom:5px">${DIAS_SEMANA_CURTO_MON[i]} ${dia.getDate()}</div>
+          ${feriado ? `<div style="font-size:7pt;color:${feriado.tipoCor === 'periodo' ? '#d97706' : '#dc2626'};margin-bottom:4px">${feriado.descricao}</div>` : ''}
+          ${aulasNoDia.map(a => `<div style="background:${a.turma_cor || '#3B82F6'};color:white;padding:4px 6px;border-radius:4px;font-size:8pt;margin-bottom:4px">
+            <div style="font-weight:600">${a.disciplina_nome}</div>
+            <div style="opacity:0.9;font-size:7pt">${a.hora_inicio}–${a.hora_fim}${a.sala ? ' · ' + a.sala : ''}</div>
+            ${a.topico ? `<div style="opacity:0.85;font-size:7pt;margin-top:1px">${a.topico}</div>` : ''}
+          </div>`).join('')}
+          ${aulasNoDia.length === 0 ? '<div style="color:#d1d5db;font-size:8pt;text-align:center;margin-top:8px">—</div>' : ''}
+        </td>`
+      }).join('')
+      return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><style>${baseStyle} h1{text-align:center;font-size:13pt;margin-bottom:14px;color:#111827;} table{width:100%;border-collapse:collapse;}</style></head><body>
+        <h1>Calendário — ${titulo}</h1>
+        <table><tbody><tr>${cols}</tr></tbody></table>
+        ${rodape}</body></html>`
+    }
+
+    // Anual
+    const mesesHTML = Array.from({ length: 12 }, (_, m) => {
+      const dias = getDiasMiniMes(ano, m)
+      const rows = []
+      for (let i = 0; i < dias.length; i += 7) {
+        const cells = dias.slice(i, i + 7).map(date => {
+          if (!date) return '<td></td>'
+          const dateStr = toDateStr(date)
+          const aulasNoDia = aulas.filter(a => a.data === dateStr)
+          const feriado = diasNaoLetivos[dateStr]
+          const isHoje = dateStr === hojeStr
+          const bg = isHoje ? '#2563eb' : feriado ? '#fef2f2' : 'transparent'
+          const color = isHoje ? 'white' : feriado ? '#dc2626' : '#374151'
+          const dots = aulasNoDia.slice(0, 3).map(a => `<span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:${a.turma_cor || '#3B82F6'};margin:0 0.5px"></span>`).join('')
+          return `<td style="text-align:center;padding:1px"><div style="background:${bg};color:${color};border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:6.5pt;font-weight:${isHoje ? 'bold' : 'normal'};margin:0 auto">${date.getDate()}</div>${aulasNoDia.length > 0 ? `<div style="line-height:0;margin-top:1px">${dots}</div>` : ''}</td>`
+        }).join('')
+        rows.push(`<tr>${cells}</tr>`)
+      }
+      return `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;background:white">
+        <div style="text-align:center;font-size:9pt;font-weight:700;color:#111827;margin-bottom:5px">${MESES[m]}</div>
+        <table style="width:100%;border-collapse:collapse"><thead><tr>${['S','T','Q','Q','S','S','D'].map(d => `<th style="text-align:center;font-size:6pt;color:#9ca3af;padding:2px;font-weight:600">${d}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>
+      </div>`
+    }).join('')
+    return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><style>${baseStyle} h1{text-align:center;font-size:14pt;margin-bottom:16px;color:#111827;} .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}</style></head><body>
+      <h1>Calendário ${ano}</h1>
+      <div class="grid">${mesesHTML}</div>
+      ${rodape}</body></html>`
+  }
+
+  async function imprimirCalendarioFn() {
+    const html = gerarHTMLCalendario()
+    const ano = dataAtual.getFullYear()
+    const mes = dataAtual.getMonth()
+    const nome = vista === 'mensal' ? `calendario-${MESES[mes].toLowerCase()}-${ano}.pdf`
+      : vista === 'anual' ? `calendario-${ano}.pdf`
+      : `calendario-semana-${toDateStr(getDiasSemana()[0])}.pdf`
+    await db.imprimirCalendario(html, nome)
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -228,27 +343,30 @@ export default function Calendario() {
           >
             Períodos
           </button>
+          <button
+            onClick={imprimirCalendarioFn}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+            title="Imprimir calendário como PDF"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Imprimir
+          </button>
           <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setVista('mensal')}
-              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                vista === 'mensal'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              Mensal
-            </button>
-            <button
-              onClick={() => setVista('semanal')}
-              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                vista === 'semanal'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              Semanal
-            </button>
+            {['mensal', 'semanal', 'anual'].map(v => (
+              <button
+                key={v}
+                onClick={() => setVista(v)}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors capitalize ${
+                  vista === v
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                {v.charAt(0).toUpperCase() + v.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -261,6 +379,8 @@ export default function Calendario() {
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white ml-2">
           {vista === 'mensal'
             ? `${MESES[dataAtual.getMonth()]} ${dataAtual.getFullYear()}`
+            : vista === 'anual'
+            ? `${dataAtual.getFullYear()}`
             : (() => {
                 const dias = getDiasSemana()
                 return `${dias[0].getDate()} – ${dias[6].getDate()} ${MESES[dias[6].getMonth()]} ${dias[6].getFullYear()}`
@@ -271,7 +391,51 @@ export default function Calendario() {
 
       {/* Calendar */}
       <div className="card overflow-hidden p-0">
-        {vista === 'mensal' ? (
+        {vista === 'anual' ? (
+          <div className="grid grid-cols-3 gap-4 p-4">
+            {Array.from({ length: 12 }, (_, m) => {
+              const ano = dataAtual.getFullYear()
+              const dias = getDiasMiniMes(ano, m)
+              return (
+                <div
+                  key={m}
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+                  onClick={() => { setDataAtual(new Date(ano, m, 1)); setVista('mensal') }}
+                >
+                  <p className="text-sm font-bold text-center text-gray-800 dark:text-gray-200 mb-2">{MESES[m]}</p>
+                  <div className="grid grid-cols-7 text-center">
+                    {['S','T','Q','Q','S','S','D'].map((d, i) => (
+                      <div key={i} className="text-xs font-semibold text-gray-400 dark:text-gray-500 pb-1">{d}</div>
+                    ))}
+                    {dias.map((date, idx) => {
+                      if (!date) return <div key={idx} />
+                      const dateStr = toDateStr(date)
+                      const aulasNoDia = aulas.filter(a => a.data === dateStr)
+                      const feriado = diasNaoLetivos[dateStr]
+                      const isHoje = dateStr === hojeStr
+                      return (
+                        <div key={idx} className="flex flex-col items-center py-0.5">
+                          <span className={`text-xs w-5 h-5 flex items-center justify-center rounded-full leading-none ${
+                            isHoje ? 'bg-blue-600 text-white font-bold' :
+                            feriado ? 'text-red-500 dark:text-red-400' :
+                            'text-gray-700 dark:text-gray-300'
+                          }`}>{date.getDate()}</span>
+                          {aulasNoDia.length > 0 && (
+                            <div className="flex gap-0.5 mt-0.5">
+                              {aulasNoDia.slice(0, 3).map(a => (
+                                <div key={a.id} className="w-1 h-1 rounded-full" style={{ backgroundColor: a.turma_cor || '#3B82F6' }} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : vista === 'mensal' ? (
           <div className="flex flex-col">
             {/* Day headers */}
             <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">

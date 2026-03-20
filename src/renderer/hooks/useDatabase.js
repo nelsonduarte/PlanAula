@@ -281,6 +281,11 @@ export function useDatabase() {
     { aulas: [], turmas: [], disciplinas: [] }
   )
 
+  const imprimirCalendario = (html, nome) => execute(
+    () => window.api.exports.calendarioHTML(html, nome),
+    { success: false, error: 'Não disponível fora do Electron' }
+  )
+
   const exportarRelatorioTurma = (turma, horarios, aulas, config) => execute(
     () => window.api.exports.relatorioTurma(turma, horarios, aulas, config),
     { success: false, error: 'Não disponível fora do Electron' }
@@ -331,7 +336,7 @@ export function useDatabase() {
     listarCursos, criarCurso, editarCurso, eliminarCurso,
     obterConfiguracoes, salvarConfiguracoes,
     obterEstatisticas,
-    exportarAulaPlano, exportarRelatorioFinanceiro, exportarRelatorioTurma,
+    exportarAulaPlano, exportarRelatorioFinanceiro, exportarRelatorioTurma, imprimirCalendario,
     pesquisarGlobal, reiniciarApp,
     exportarBackup, importarBackup,
     listarOutrosRendimentos, criarOutroRendimento, editarOutroRendimento, eliminarOutroRendimento,
