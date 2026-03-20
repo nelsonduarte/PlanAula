@@ -215,11 +215,7 @@ export default function Turmas() {
                     {turma.carga_horaria > 0 && (
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">⏱ {turma.carga_horaria}h</p>
                     )}
-                    {turma.sala && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                        📍 Sala {turma.sala}
-                      </p>
-                    )}
+
 
                     {/* Schedules */}
                     {horarios[turma.id] && horarios[turma.id].length > 0 && (
@@ -287,16 +283,6 @@ export default function Turmas() {
                 value={form.designacao}
                 onChange={e => setForm(f => ({ ...f, designacao: e.target.value }))}
                 placeholder="Ex: Turma A"
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="label-field">Sala</label>
-              <input
-                type="text"
-                value={form.sala || ''}
-                onChange={e => setForm(f => ({ ...f, sala: e.target.value }))}
-                placeholder="Ex: A101"
                 className="input-field"
               />
             </div>
