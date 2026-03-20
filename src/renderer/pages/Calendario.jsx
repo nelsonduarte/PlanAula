@@ -428,7 +428,7 @@ export default function Calendario() {
                             style={{ backgroundColor: aula.turma_cor || estadoColors[aula.estado] || '#3B82F6' }}
                           >
                             <p className="font-medium truncate">{aula.disciplina_nome}</p>
-                            <p className="opacity-90">{aula.hora_inicio}–{aula.hora_fim}</p>
+                            <p className="opacity-90">{aula.hora_inicio}–{aula.hora_fim}{aula.sala ? ` · ${aula.sala}` : ''}</p>
                             {aula.topico && <p className="opacity-80 truncate mt-0.5">{aula.topico}</p>}
                           </button>
                           <button
