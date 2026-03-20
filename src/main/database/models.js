@@ -201,11 +201,12 @@ export function listarAulas(filtros = {}) {
   let query = `
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
            d.nome as disciplina_nome, d.id as disciplina_id,
-           m.nome as modulo_nome
+           m.nome as modulo_nome, h.sala as sala
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
+    LEFT JOIN horarios h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
     WHERE 1=1
   `
   const params = []

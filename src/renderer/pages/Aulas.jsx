@@ -347,6 +347,7 @@ export default function Aulas() {
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {aula.numero != null && <span className="mr-2 font-semibold text-gray-400 dark:text-gray-500">Aula {aula.numero}</span>}
                         {aula.hora_inicio} – {aula.hora_fim}
+                        {aula.sala && <span className="ml-2">· 📍 {aula.sala}</span>}
                         {aula.topico && <span className="ml-2">· {aula.topico}</span>}
                       </p>
                       {aula.modulo_nome && (
