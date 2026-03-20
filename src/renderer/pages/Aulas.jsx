@@ -33,6 +33,7 @@ export default function Aulas() {
   const [form, setForm] = useState(emptyForm)
   const [filtros, setFiltros] = useState({ turma_id: '', estado: '', data_inicio: '', data_fim: '' })
   const [gerarForm, setGerarForm] = useState({ turma_id: '', data_inicio: '', data_fim: '' })
+  const [gerarTodas, setGerarTodas] = useState(false)
   const [infoTurma, setInfoTurma] = useState(null) // { carga_horaria, horas_existentes }
   const [resultadoGerar, setResultadoGerar] = useState(null) // { titulo, linhas, tipo }
   const [horariosGerar, setHorariosGerar] = useState([])
@@ -180,6 +181,10 @@ export default function Aulas() {
   }
 
   async function gerar() {
+    if (gerarTodas) {
+      await gerarParaTodas()
+      return
+    }
     if (!gerarForm.turma_id || !gerarForm.data_inicio || !gerarForm.data_fim) {
       await alert('Preencha todos os campos')
       return
@@ -207,7 +212,6 @@ export default function Aulas() {
         const faltam = carga_horaria - totalAgora
         if (limite_atingido) {
           linhas.push(`Carga horária atingida: ${totalAgora.toFixed(1)}h / ${carga_horaria}h`)
-          tipo = 'success'
         } else if (faltam > 0.05) {
           linhas.push(`Total planeado: ${totalAgora.toFixed(1)}h / ${carga_horaria}h`)
           linhas.push(`Faltam ${faltam.toFixed(1)}h — amplie o intervalo ou adicione mais slots ao horário.`)
@@ -219,6 +223,30 @@ export default function Aulas() {
     }
     setModalGerar(false)
     setResultadoGerar({ linhas, tipo })
+    await carregarComFiltros()
+  }
+
+  async function gerarParaTodas() {
+    const turmasComDatas = turmas.filter(t => t.data_inicio && t.data_fim)
+    if (turmasComDatas.length === 0) {
+      await alert('Nenhuma turma tem datas de início e fim definidas.')
+      return
+    }
+    let totalAulas = 0, totalHoras = 0, semHorarios = [], erros = []
+    for (const t of turmasComDatas) {
+      try {
+        const r = await db.gerarAulasAutomatico(t.id, t.data_inicio, t.data_fim)
+        if (r) { totalAulas += r.aulas.length; totalHoras += r.horas_geradas }
+        else semHorarios.push(t.designacao)
+      } catch { erros.push(t.designacao) }
+    }
+    const linhas = [`${turmasComDatas.length} turma(s) processada(s)`]
+    if (totalAulas > 0) linhas.push(`${totalAulas} nova(s) aula(s) gerada(s) — ${totalHoras.toFixed(1)}h`)
+    else linhas.push('Nenhuma nova aula criada — todas já existiam.')
+    if (semHorarios.length) linhas.push(`Sem horários: ${semHorarios.join(', ')}`)
+    if (erros.length) linhas.push(`Erros em: ${erros.join(', ')}`)
+    setModalGerar(false)
+    setResultadoGerar({ linhas, tipo: totalAulas > 0 ? 'success' : 'info' })
     await carregarComFiltros()
   }
 
@@ -607,102 +635,113 @@ export default function Aulas() {
       {/* Modal geração automática */}
       <Modal
         isOpen={modalGerar}
-        onClose={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]) }}
+        onClose={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]); setGerarTodas(false) }}
         title="Gerar Aulas Automaticamente"
         size="md"
         footer={
           <>
-            <button onClick={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]) }} className="btn-secondary">Cancelar</button>
+            <button onClick={() => { setModalGerar(false); setInfoTurma(null); setHorariosGerar([]); setGerarTodas(false) }} className="btn-secondary">Cancelar</button>
             <button onClick={gerar} className="btn-primary">Gerar</button>
           </>
         }
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Gera automaticamente aulas com base nos horários definidos para a turma seleccionada.
-          </p>
-          <div>
-            <label className="label-field">Turma *</label>
-            <select
-              value={gerarForm.turma_id}
-              onChange={e => {
-                const turma = turmas.find(t => String(t.id) === e.target.value)
-                setGerarForm(f => ({
-                  ...f,
-                  turma_id: e.target.value,
-                  data_inicio: turma?.data_inicio || f.data_inicio,
-                  data_fim: turma?.data_fim || f.data_fim,
-                }))
-                carregarInfoTurma(e.target.value)
-              }}
-              className="input-field"
-            >
-              <option value="">Seleccionar turma...</option>
-              {turmas.map(t => (
-                <option key={t.id} value={t.id}>{t.disciplina_nome} – {t.designacao}</option>
-              ))}
-            </select>
+          {/* Toggle todas / uma turma */}
+          <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => { setGerarTodas(false) }}
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${!gerarTodas ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+            >Por turma</button>
+            <button
+              onClick={() => { setGerarTodas(true); setInfoTurma(null); setHorariosGerar([]) }}
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${gerarTodas ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+            >Todas as turmas</button>
           </div>
-          {infoTurma && infoTurma.carga_horaria > 0 && (
-            <div className={`rounded-lg p-3 text-sm flex items-center justify-between ${
-              infoTurma.horas_existentes >= infoTurma.carga_horaria
-                ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-                : infoTurma.horas_existentes / infoTurma.carga_horaria >= 0.8
-                  ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
-                  : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
-            }`}>
-              <div>
-                <p className="font-medium">Carga horária: {infoTurma.carga_horaria}h</p>
-                <p>Já planeadas: {infoTurma.horas_existentes.toFixed(1)}h · Disponíveis: {Math.max(0, infoTurma.carga_horaria - infoTurma.horas_existentes).toFixed(1)}h</p>
-              </div>
-              <span className="text-lg font-bold">
-                {Math.round(infoTurma.horas_existentes / infoTurma.carga_horaria * 100)}%
-              </span>
-            </div>
-          )}
-          {infoTurma && infoTurma.carga_horaria === 0 && (
-            <p className="text-xs text-gray-400 dark:text-gray-500">Sem carga horária definida — será gerado sem limite de horas.</p>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label-field">Data início *</label>
-              <input
-                type="date"
-                value={gerarForm.data_inicio}
-                onChange={e => setGerarForm(f => ({ ...f, data_inicio: e.target.value }))}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="label-field">Data fim *</label>
-              <input
-                type="date"
-                value={gerarForm.data_fim}
-                onChange={e => setGerarForm(f => ({ ...f, data_fim: e.target.value }))}
-                className="input-field"
-              />
-            </div>
-          </div>
-          {horariosGerar.length > 0 ? (
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
-              <p className="font-medium mb-1">Horários desta turma:</p>
-              <ul className="space-y-0.5">
-                {horariosGerar.map(h => (
-                  <li key={h.id}>
-                    {DIAS_SEMANA[parseInt(h.dia_semana)]} — {h.hora_inicio}–{h.hora_fim}{h.sala ? ` (${h.sala})` : ''}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs opacity-75">Aulas já existentes não serão duplicadas.</p>
-            </div>
-          ) : gerarForm.turma_id ? (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-300">
-              ⚠️ Esta turma não tem horários definidos. Configure os horários na página de Turmas.
+
+          {gerarTodas ? (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300 space-y-1">
+              <p className="font-medium">Gerar para {turmas.filter(t => t.data_inicio && t.data_fim).length} turma(s) com datas definidas</p>
+              <p className="text-xs opacity-80">Cada turma usa o seu próprio período (data início/fim). Aulas já existentes não serão duplicadas.</p>
+              {turmas.filter(t => !t.data_inicio || !t.data_fim).length > 0 && (
+                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                  ⚠️ {turmas.filter(t => !t.data_inicio || !t.data_fim).length} turma(s) sem datas definidas serão ignoradas.
+                </p>
+              )}
             </div>
           ) : (
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
-              ℹ️ Apenas serão criadas aulas em datas com horário definido. Aulas já existentes não serão duplicadas.
-            </div>
+            <>
+              <div>
+                <label className="label-field">Turma *</label>
+                <select
+                  value={gerarForm.turma_id}
+                  onChange={e => {
+                    const turma = turmas.find(t => String(t.id) === e.target.value)
+                    setGerarForm(f => ({
+                      ...f,
+                      turma_id: e.target.value,
+                      data_inicio: turma?.data_inicio || f.data_inicio,
+                      data_fim: turma?.data_fim || f.data_fim,
+                    }))
+                    carregarInfoTurma(e.target.value)
+                  }}
+                  className="input-field"
+                >
+                  <option value="">Seleccionar turma...</option>
+                  {turmas.map(t => (
+                    <option key={t.id} value={t.id}>{t.disciplina_nome} – {t.designacao}</option>
+                  ))}
+                </select>
+              </div>
+              {infoTurma && infoTurma.carga_horaria > 0 && (
+                <div className={`rounded-lg p-3 text-sm flex items-center justify-between ${
+                  infoTurma.horas_existentes >= infoTurma.carga_horaria
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                    : infoTurma.horas_existentes / infoTurma.carga_horaria >= 0.8
+                      ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
+                      : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                }`}>
+                  <div>
+                    <p className="font-medium">Carga horária: {infoTurma.carga_horaria}h</p>
+                    <p>Já planeadas: {infoTurma.horas_existentes.toFixed(1)}h · Disponíveis: {Math.max(0, infoTurma.carga_horaria - infoTurma.horas_existentes).toFixed(1)}h</p>
+                  </div>
+                  <span className="text-lg font-bold">
+                    {Math.round(infoTurma.horas_existentes / infoTurma.carga_horaria * 100)}%
+                  </span>
+                </div>
+              )}
+              {infoTurma && infoTurma.carga_horaria === 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">Sem carga horária definida — será gerado sem limite de horas.</p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label-field">Data início *</label>
+                  <input type="date" value={gerarForm.data_inicio} onChange={e => setGerarForm(f => ({ ...f, data_inicio: e.target.value }))} className="input-field" />
+                </div>
+                <div>
+                  <label className="label-field">Data fim *</label>
+                  <input type="date" value={gerarForm.data_fim} onChange={e => setGerarForm(f => ({ ...f, data_fim: e.target.value }))} className="input-field" />
+                </div>
+              </div>
+              {horariosGerar.length > 0 ? (
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+                  <p className="font-medium mb-1">Horários desta turma:</p>
+                  <ul className="space-y-0.5">
+                    {horariosGerar.map(h => (
+                      <li key={h.id}>{DIAS_SEMANA[parseInt(h.dia_semana)]} — {h.hora_inicio}–{h.hora_fim}{h.sala ? ` (${h.sala})` : ''}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs opacity-75">Aulas já existentes não serão duplicadas.</p>
+                </div>
+              ) : gerarForm.turma_id ? (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-300">
+                  ⚠️ Esta turma não tem horários definidos. Configure os horários na página de Turmas.
+                </div>
+              ) : (
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+                  ℹ️ Apenas serão criadas aulas em datas com horário definido. Aulas já existentes não serão duplicadas.
+                </div>
+              )}
+            </>
           )}
         </div>
       </Modal>
