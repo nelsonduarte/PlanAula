@@ -282,7 +282,7 @@ export default function Calendario() {
               ))}
             </div>
             {/* Days grid */}
-            <div className="grid grid-cols-7" style={{ gridAutoRows: 'minmax(7rem, auto)' }}>
+            <div className="grid grid-cols-7" style={{ gridAutoRows: 'minmax(9rem, auto)' }}>
               {diasMes.map((item, idx) => {
                 const dateStr = toDateStr(item.date)
                 const aulasNoDia = getAulasDoDia(dateStr)
@@ -294,7 +294,7 @@ export default function Calendario() {
                 return (
                   <div
                     key={idx}
-                    className={`border-b border-r border-gray-100 dark:border-gray-700/50 p-1 overflow-hidden ${
+                    className={`border-b border-r border-gray-100 dark:border-gray-700/50 p-1 ${
                       feriado
                         ? isPeriodo
                           ? 'bg-amber-50 dark:bg-amber-900/10'
@@ -327,8 +327,8 @@ export default function Calendario() {
                         {feriado.descricao}
                       </p>
                     )}
-                    <div className="space-y-0.5 overflow-hidden">
-                      {aulasNoDia.slice(0, feriado ? 2 : 3).map(aula => (
+                    <div className="space-y-0.5">
+                      {aulasNoDia.map(aula => (
                         <div key={aula.id} className="relative group">
                           <button
                             draggable
@@ -350,9 +350,6 @@ export default function Calendario() {
                           >×</button>
                         </div>
                       ))}
-                      {aulasNoDia.length > (feriado ? 2 : 3) && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500 px-1">+{aulasNoDia.length - (feriado ? 2 : 3)}</p>
-                      )}
                     </div>
                   </div>
                 )
