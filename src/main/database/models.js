@@ -362,30 +362,40 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
       for (const h of horariosHoje) {
         const duracaoSlot = slotHoras(h)
 
-        // Não adicionar se exceder a carga horária (exact match é permitido)
-        if (carga_horaria > 0 && horas_existentes + horas_geradas + duracaoSlot > carga_horaria) {
-          parar = true
-          break
-        }
-
         const existente = db.prepare(
           'SELECT id FROM aulas WHERE turma_id=? AND data=? AND hora_inicio=?'
         ).get(turma_id, dataStr, h.hora_inicio)
 
-        if (!existente) {
-          const a = criarAula({
-            turma_id, modulo_id: null, data: dataStr,
-            hora_inicio: h.hora_inicio, hora_fim: h.hora_fim,
-            topico: '', objetivos: null, conteudos: null,
-            atividades: null, recursos: null, avaliacao: null,
-            notas: null, estado: 'Planeada'
-          })
-          aulas.push(a)
-          horas_geradas += duracaoSlot
-          if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
-            parar = true
-            break
+        if (existente) continue
+
+        let horaFim = h.hora_fim
+        let duracaoReal = duracaoSlot
+
+        if (carga_horaria > 0) {
+          const horasRestantes = carga_horaria - horas_existentes - horas_geradas
+          if (horasRestantes <= 0) { parar = true; break }
+
+          if (duracaoSlot > horasRestantes) {
+            // Ajustar hora_fim para completar exatamente a carga horária
+            const [hi, mi] = h.hora_inicio.split(':').map(Number)
+            const totalMin = hi * 60 + mi + Math.round(horasRestantes * 60)
+            horaFim = `${String(Math.floor(totalMin / 60)).padStart(2,'0')}:${String(totalMin % 60).padStart(2,'0')}`
+            duracaoReal = horasRestantes
           }
+        }
+
+        const a = criarAula({
+          turma_id, modulo_id: null, data: dataStr,
+          hora_inicio: h.hora_inicio, hora_fim: horaFim,
+          topico: '', objetivos: null, conteudos: null,
+          atividades: null, recursos: null, avaliacao: null,
+          notas: null, estado: 'Planeada'
+        })
+        aulas.push(a)
+        horas_geradas += duracaoReal
+        if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
+          parar = true
+          break
         }
       }
     }
