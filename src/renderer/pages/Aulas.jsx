@@ -17,7 +17,7 @@ const estadoColors = {
 const emptyForm = {
   turma_id: '', modulo_id: '', data: '', hora_inicio: '09:00', hora_fim: '11:00',
   topico: '', objetivos: '', conteudos: '', atividades: '', recursos: '', avaliacao: '', notas: '',
-  estado: 'Planeada', numero: ''
+  estado: 'Planeada', numero: '', data_avaliacao: ''
 }
 
 export default function Aulas() {
@@ -96,7 +96,8 @@ export default function Aulas() {
       avaliacao: aula.avaliacao || '',
       notas: aula.notas || '',
       estado: aula.estado || 'Planeada',
-      numero: aula.numero || ''
+      numero: aula.numero || '',
+      data_avaliacao: aula.data_avaliacao || ''
     })
     setActiveTab('geral')
     setModalAberto(true)
@@ -381,6 +382,11 @@ export default function Aulas() {
                       {aula.modulo_nome && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">{aula.modulo_nome}</p>
                       )}
+                      {aula.data_avaliacao && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+                          Avaliação: {new Date(aula.data_avaliacao + 'T12:00:00').toLocaleDateString('pt-PT')}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -617,15 +623,26 @@ export default function Aulas() {
             )}
 
             {activeTab === 'avaliacao' && (
-              <div>
-                <label className="label-field">Avaliação</label>
-                <textarea
-                  rows={6}
-                  value={form.avaliacao}
-                  onChange={e => setForm(f => ({ ...f, avaliacao: e.target.value }))}
-                  placeholder="Instrumentos e critérios de avaliação..."
-                  className="input-field resize-none"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="label-field">Data de Avaliação</label>
+                  <input
+                    type="date"
+                    value={form.data_avaliacao}
+                    onChange={e => setForm(f => ({ ...f, data_avaliacao: e.target.value }))}
+                    className="input-field"
+                  />
+                </div>
+                <div>
+                  <label className="label-field">Instrumentos e Critérios</label>
+                  <textarea
+                    rows={5}
+                    value={form.avaliacao}
+                    onChange={e => setForm(f => ({ ...f, avaliacao: e.target.value }))}
+                    placeholder="Instrumentos e critérios de avaliação..."
+                    className="input-field resize-none"
+                  />
+                </div>
               </div>
             )}
           </div>

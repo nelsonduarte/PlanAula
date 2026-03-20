@@ -188,9 +188,9 @@ export function criarAula(dados) {
   const numero = dados.numero != null ? dados.numero : proximoNumeroAula(dados.turma_id)
   const stmt = db.prepare(`
     INSERT INTO aulas (turma_id, modulo_id, data, hora_inicio, hora_fim, topico,
-      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero)
+      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao)
     VALUES (@turma_id, @modulo_id, @data, @hora_inicio, @hora_fim, @topico,
-      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero)
+      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao)
   `)
   const result = stmt.run({ ...dados, numero })
   return { id: result.lastInsertRowid, ...dados, numero }
@@ -261,7 +261,7 @@ export function editarAula(id, dados) {
       hora_inicio=@hora_inicio, hora_fim=@hora_fim, topico=@topico,
       objetivos=@objetivos, conteudos=@conteudos, atividades=@atividades,
       recursos=@recursos, avaliacao=@avaliacao, notas=@notas, estado=@estado,
-      numero=COALESCE(@numero, numero),
+      numero=COALESCE(@numero, numero), data_avaliacao=@data_avaliacao,
       updated_at=CURRENT_TIMESTAMP
     WHERE id=@id
   `).run({ ...dados, numero: dados.numero ?? null, id })

@@ -129,6 +129,9 @@ export function runMigrations() {
   if (!colunas.includes('numero')) {
     db.exec(`ALTER TABLE aulas ADD COLUMN numero INTEGER`)
   }
+  if (!colunas.includes('data_avaliacao')) {
+    db.exec(`ALTER TABLE aulas ADD COLUMN data_avaliacao DATE`)
+  }
 
   const colunasDisciplinas = db.prepare(`PRAGMA table_info(disciplinas)`).all().map(c => c.name)
   if (!colunasDisciplinas.includes('curso_id')) {
