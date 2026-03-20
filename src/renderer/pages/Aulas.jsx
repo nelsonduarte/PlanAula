@@ -355,24 +355,17 @@ export default function Aulas() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <select
-                        value={aula.estado}
-                        onChange={e => mudarEstado(aula, e.target.value)}
-                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 ${
-                          aula.estado === 'Planeada' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
-                          aula.estado === 'Realizada' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' :
-                          aula.estado === 'Adiada' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' :
-                          'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-                        }`}
-                      >
-                        {(() => {
-                          const hoje = new Date(); hoje.setHours(0,0,0,0)
-                          const dataAula = new Date(aula.data + 'T00:00:00')
-                          const passou = dataAula <= hoje
-                          return ['Adiada', 'Cancelada', passou ? 'Realizada' : 'Planeada']
-                            .map(e => <option key={e} value={e}>{e}</option>)
-                        })()}
-                      </select>
+                      {(() => {
+                        const override = aula.estado === 'Adiada' || aula.estado === 'Cancelada'
+                        const hoje = new Date(); hoje.setHours(0,0,0,0)
+                        const passou = new Date(aula.data + 'T00:00:00') <= hoje
+                        const estadoVis = override ? aula.estado : passou ? 'Realizada' : 'Planeada'
+                        const cls = estadoVis === 'Realizada' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' :
+                                    estadoVis === 'Adiada'    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                                    estadoVis === 'Cancelada' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' :
+                                                                'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                        return <span className={`text-xs font-medium px-2 py-1 rounded-full ${cls}`}>{estadoVis}</span>
+                      })()}
                       <button
                         onClick={() => exportarPlano(aula)}
                         disabled={exportando === aula.id}
