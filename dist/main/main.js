@@ -369,11 +369,12 @@ function listarAulas(filtros = {}) {
   let query = `
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
            d.nome as disciplina_nome, d.id as disciplina_id,
-           m.nome as modulo_nome
+           m.nome as modulo_nome, h.sala as sala
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
+    LEFT JOIN horarios h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
     WHERE 1=1
   `;
   const params = [];
@@ -497,35 +498,45 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
       const horariosHoje = horarios.filter((h) => parseInt(h.dia_semana) === diaSemana);
       for (const h of horariosHoje) {
         const duracaoSlot = slotHoras(h);
-        if (carga_horaria > 0 && horas_existentes + horas_geradas + duracaoSlot > carga_horaria) {
-          parar = true;
-          break;
-        }
         const existente = db2.prepare(
           "SELECT id FROM aulas WHERE turma_id=? AND data=? AND hora_inicio=?"
         ).get(turma_id, dataStr, h.hora_inicio);
-        if (!existente) {
-          const a = criarAula({
-            turma_id,
-            modulo_id: null,
-            data: dataStr,
-            hora_inicio: h.hora_inicio,
-            hora_fim: h.hora_fim,
-            topico: "",
-            objetivos: null,
-            conteudos: null,
-            atividades: null,
-            recursos: null,
-            avaliacao: null,
-            notas: null,
-            estado: "Planeada"
-          });
-          aulas.push(a);
-          horas_geradas += duracaoSlot;
-          if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
+        if (existente) continue;
+        let horaFim = h.hora_fim;
+        let duracaoReal = duracaoSlot;
+        if (carga_horaria > 0) {
+          const horasRestantes = carga_horaria - horas_existentes - horas_geradas;
+          if (horasRestantes <= 0) {
             parar = true;
             break;
           }
+          if (duracaoSlot > horasRestantes) {
+            const [hi, mi] = h.hora_inicio.split(":").map(Number);
+            const totalMin = hi * 60 + mi + Math.round(horasRestantes * 60);
+            horaFim = `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+            duracaoReal = horasRestantes;
+          }
+        }
+        const a = criarAula({
+          turma_id,
+          modulo_id: null,
+          data: dataStr,
+          hora_inicio: h.hora_inicio,
+          hora_fim: horaFim,
+          topico: "",
+          objetivos: null,
+          conteudos: null,
+          atividades: null,
+          recursos: null,
+          avaliacao: null,
+          notas: null,
+          estado: "Planeada"
+        });
+        aulas.push(a);
+        horas_geradas += duracaoReal;
+        if (carga_horaria > 0 && horas_existentes + horas_geradas >= carga_horaria) {
+          parar = true;
+          break;
         }
       }
     }
@@ -661,7 +672,8 @@ function importarFeriadosNacionais(ano) {
     criados.push(criarDiaNaoLetivo({ data, descricao: f.desc, tipo: "feriado" }));
   }
   for (const m of moveis) {
-    const data = m.data.toISOString().split("T")[0];
+    const d = m.data;
+    const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     criados.push(criarDiaNaoLetivo({ data, descricao: m.desc, tipo: "feriado" }));
   }
   return criados;
@@ -895,44 +907,234 @@ function eliminarPeriodoNaoLetivo(id) {
   db2.prepare("DELETE FROM periodos_nao_letivos WHERE id = ?").run(id);
   return { success: true };
 }
+function pesquisarGlobal(query) {
+  const db2 = getDb();
+  if (!query || query.trim().length < 2) return { aulas: [], turmas: [], disciplinas: [] };
+  const q = `%${query.trim()}%`;
+  const aulas = db2.prepare(`
+    SELECT a.id, a.data, a.hora_inicio, a.hora_fim, a.topico, a.estado,
+           t.designacao as turma_nome, t.cor as turma_cor, d.nome as disciplina_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE a.topico LIKE ? OR t.designacao LIKE ? OR d.nome LIKE ? OR a.data LIKE ?
+    ORDER BY a.data DESC LIMIT 8
+  `).all(q, q, q, q);
+  const turmas = db2.prepare(`
+    SELECT t.id, t.designacao, t.cor, t.ano_letivo, d.nome as disciplina_nome
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE t.designacao LIKE ? OR d.nome LIKE ?
+    LIMIT 5
+  `).all(q, q);
+  const disciplinas = db2.prepare(`
+    SELECT id, nome, codigo, carga_horaria
+    FROM disciplinas
+    WHERE nome LIKE ? OR codigo LIKE ?
+    LIMIT 5
+  `).all(q, q);
+  return { aulas, turmas, disciplinas };
+}
 function obterEstatisticas(ano_letivo) {
   const db2 = getDb();
   const anoAtual = ano_letivo || (/* @__PURE__ */ new Date()).getFullYear();
   const [anoInicio] = String(anoAtual).split("/");
+  const ano = String(anoInicio);
+  const estadoVirtual = `
+    CASE
+      WHEN estado IN ('Adiada','Cancelada') THEN estado
+      WHEN data <= date('now') THEN 'Realizada'
+      ELSE 'Planeada'
+    END
+  `;
+  const duracaoMin = `(
+    CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER) -
+    CAST(substr(hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(hora_inicio,4,2) AS INTEGER)
+  )`;
   const porEstado = db2.prepare(`
-    SELECT estado, COUNT(*) as total FROM aulas
+    SELECT ${estadoVirtual} as estado, COUNT(*) as total
+    FROM aulas
     WHERE strftime('%Y', data) = ?
-    GROUP BY estado
-  `).all(String(anoInicio));
+    GROUP BY 1
+  `).all(ano);
   const porDisciplina = db2.prepare(`
     SELECT d.nome as disciplina_nome,
            COUNT(a.id) as total_aulas,
-           SUM((strftime('%H', a.hora_fim) * 60 + strftime('%M', a.hora_fim) -
-                strftime('%H', a.hora_inicio) * 60 - strftime('%M', a.hora_inicio)) / 60.0) as total_horas
+           SUM(${duracaoMin} / 60.0) as total_horas
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     WHERE strftime('%Y', a.data) = ? AND a.estado != 'Cancelada'
     GROUP BY d.id
     ORDER BY total_horas DESC
-  `).all(String(anoInicio));
+  `).all(ano);
   const evolucaoMensal = db2.prepare(`
-    SELECT strftime('%Y-%m', data) as mes, COUNT(*) as total_aulas,
-           SUM((strftime('%H', hora_fim) * 60 + strftime('%M', hora_fim) -
-                strftime('%H', hora_inicio) * 60 - strftime('%M', hora_inicio)) / 60.0) as total_horas
+    SELECT strftime('%Y-%m', data) as mes,
+           COUNT(*) as total_aulas,
+           SUM(${duracaoMin} / 60.0) as total_horas
     FROM aulas
     WHERE strftime('%Y', data) = ? AND estado != 'Cancelada'
-    GROUP BY mes
-    ORDER BY mes
-  `).all(String(anoInicio));
+    GROUP BY mes ORDER BY mes
+  `).all(ano);
+  const porTurma = db2.prepare(`
+    SELECT t.designacao as turma_nome,
+           d.nome as disciplina_nome,
+           t.carga_horaria,
+           COUNT(a.id) as total_aulas,
+           COALESCE(SUM(CASE WHEN a.estado != 'Cancelada' AND a.data <= date('now')
+             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_dadas,
+           COALESCE(SUM(CASE WHEN a.estado != 'Cancelada'
+             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_total
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN aulas a ON a.turma_id = t.id AND strftime('%Y', a.data) = ?
+    GROUP BY t.id
+    HAVING horas_total > 0
+    ORDER BY horas_dadas DESC
+  `).all(ano);
+  const porDiaSemana = db2.prepare(`
+    SELECT CAST(strftime('%w', data) AS INTEGER) as dia,
+           COUNT(*) as total_aulas,
+           SUM(${duracaoMin} / 60.0) as total_horas
+    FROM aulas
+    WHERE strftime('%Y', data) = ?
+      AND estado NOT IN ('Cancelada','Adiada')
+      AND data <= date('now')
+    GROUP BY dia ORDER BY dia
+  `).all(ano);
   const totalAulas = porEstado.reduce((s, r) => s + r.total, 0);
   const realizadas = porEstado.find((r) => r.estado === "Realizada")?.total || 0;
-  const taxaConclusao = totalAulas > 0 ? (realizadas / totalAulas * 100).toFixed(1) : 0;
-  return { porEstado, porDisciplina, evolucaoMensal, totalAulas, realizadas, taxaConclusao };
+  const adiadas = porEstado.find((r) => r.estado === "Adiada")?.total || 0;
+  const canceladas = porEstado.find((r) => r.estado === "Cancelada")?.total || 0;
+  const totalHoras = porDisciplina.reduce((s, d) => s + (d.total_horas || 0), 0);
+  const taxaConclusao = realizadas + adiadas + canceladas > 0 ? (realizadas / totalAulas * 100).toFixed(1) : 0;
+  return {
+    porEstado,
+    porDisciplina,
+    evolucaoMensal,
+    porTurma,
+    porDiaSemana,
+    totalAulas,
+    realizadas,
+    adiadas,
+    canceladas,
+    totalHoras,
+    taxaConclusao
+  };
 }
 const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 function formatCur(v) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v || 0);
+}
+const DIAS_SEMANA_PT = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+function gerarHTMLRelatorioTurma(turma, horarios, aulas, config = {}) {
+  const cor = turma.cor || "#2563eb";
+  const hoje = (/* @__PURE__ */ new Date()).toLocaleDateString("pt-PT");
+  const fmtData = (d) => d ? (/* @__PURE__ */ new Date(d + "T12:00:00")).toLocaleDateString("pt-PT") : "—";
+  const fmtDiaSemana = (d) => d ? (/* @__PURE__ */ new Date(d + "T12:00:00")).toLocaleDateString("pt-PT", { weekday: "short" }) : "";
+  const hojeISO = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const estadoVis = (a) => a.estado === "Adiada" || a.estado === "Cancelada" ? a.estado : a.data <= hojeISO ? "Realizada" : "Planeada";
+  const realizadas = aulas.filter((a) => estadoVis(a) === "Realizada").length;
+  const planeadas = aulas.filter((a) => estadoVis(a) === "Planeada").length;
+  const adiadas = aulas.filter((a) => estadoVis(a) === "Adiada").length;
+  const canceladas = aulas.filter((a) => estadoVis(a) === "Cancelada").length;
+  const horasDadas = aulas.filter((a) => estadoVis(a) === "Realizada").reduce((s, a) => {
+    const [hi, mi] = (a.hora_inicio || "0:0").split(":").map(Number);
+    const [hf, mf] = (a.hora_fim || "0:0").split(":").map(Number);
+    return s + (hf * 60 + mf - hi * 60 - mi) / 60;
+  }, 0);
+  const horasTotal = aulas.filter((a) => estadoVis(a) !== "Cancelada").reduce((s, a) => {
+    const [hi, mi] = (a.hora_inicio || "0:0").split(":").map(Number);
+    const [hf, mf] = (a.hora_fim || "0:0").split(":").map(Number);
+    return s + (hf * 60 + mf - hi * 60 - mi) / 60;
+  }, 0);
+  const carga = turma.carga_horaria || 0;
+  const progresso = carga > 0 ? Math.min(100, horasDadas / carga * 100) : null;
+  const corEstado = (e) => e === "Realizada" ? "#16a34a" : e === "Planeada" ? "#2563eb" : e === "Adiada" ? "#ca8a04" : "#dc2626";
+  const linhasAulas = aulas.map((a) => {
+    const ev = estadoVis(a);
+    return `<tr>
+      <td>${a.numero != null ? a.numero : "—"}</td>
+      <td>${fmtData(a.data)}</td>
+      <td style="color:#6b7280;font-size:9pt">${fmtDiaSemana(a.data)}</td>
+      <td>${a.hora_inicio || ""}–${a.hora_fim || ""}</td>
+      <td>${a.sala || "—"}</td>
+      <td><span class="badge" style="background:${corEstado(ev)}">${ev}</span></td>
+      <td style="color:#374151">${a.topico || ""}</td>
+    </tr>`;
+  }).join("");
+  const linhasHorarios = (horarios || []).map(
+    (h) => `<tr><td>${DIAS_SEMANA_PT[h.dia_semana] || h.dia_semana}</td><td>${h.hora_inicio}</td><td>${h.hora_fim}</td><td>${h.sala || "—"}</td></tr>`
+  ).join("");
+  return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Arial,sans-serif; font-size:10pt; color:#1f2937; background:white; padding:28px 32px; }
+  .topo { border-left:5px solid ${cor}; padding-left:14px; margin-bottom:18px; }
+  .topo h1 { font-size:18pt; font-weight:700; color:#111827; }
+  .topo h2 { font-size:12pt; color:#4b5563; margin-top:3px; }
+  .inst { font-size:9pt; color:#9ca3af; margin-bottom:6px; }
+  .meta { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; background:#f9fafb; border-radius:8px; padding:12px; margin-bottom:18px; }
+  .meta-item label { font-size:8pt; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; display:block; }
+  .meta-item span { font-weight:600; color:#111827; font-size:10pt; }
+  h3 { font-size:10pt; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin:16px 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+  th { text-align:left; padding:6px 8px; background:#f3f4f6; font-size:8.5pt; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; border-bottom:2px solid #e5e7eb; }
+  td { padding:5px 8px; border-bottom:1px solid #f3f4f6; color:#374151; vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:8pt; font-weight:600; color:white; }
+  .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:14px; }
+  .kpi { background:#f9fafb; border-radius:8px; padding:10px 12px; text-align:center; }
+  .kpi .val { font-size:16pt; font-weight:700; }
+  .kpi .lbl { font-size:8pt; color:#9ca3af; margin-top:2px; }
+  .prog-bar { height:10px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-top:8px; }
+  .prog-fill { height:100%; border-radius:999px; background:${progresso !== null && progresso >= 100 ? "#16a34a" : cor}; width:${progresso !== null ? progresso : 0}%; }
+  .rodape { margin-top:28px; border-top:1px solid #e5e7eb; padding-top:8px; font-size:8pt; color:#9ca3af; display:flex; justify-content:space-between; }
+</style></head><body>
+  <div class="topo">
+    ${config.instituicao ? `<div class="inst">${config.instituicao}${config.departamento ? " · " + config.departamento : ""}</div>` : ""}
+    <h1>${turma.designacao || ""}</h1>
+    <h2>${turma.disciplina_nome || ""}${turma.curso_nome ? " · " + turma.curso_nome : ""}</h2>
+  </div>
+
+  <div class="meta">
+    <div class="meta-item"><label>Ano Letivo</label><span>${turma.ano_letivo || "—"}</span></div>
+    <div class="meta-item"><label>Semestre</label><span>${turma.semestre ? turma.semestre + "º" : "—"}</span></div>
+    <div class="meta-item"><label>Período</label><span>${fmtData(turma.data_inicio)} → ${fmtData(turma.data_fim)}</span></div>
+    <div class="meta-item"><label>Carga Horária</label><span>${carga > 0 ? carga + "h" : "—"}</span></div>
+  </div>
+
+  <h3>Resumo</h3>
+  <div class="kpis">
+    <div class="kpi"><div class="val" style="color:#111827">${aulas.length}</div><div class="lbl">Total Aulas</div></div>
+    <div class="kpi"><div class="val" style="color:#16a34a">${realizadas}</div><div class="lbl">Realizadas</div></div>
+    <div class="kpi"><div class="val" style="color:#2563eb">${planeadas}</div><div class="lbl">Planeadas</div></div>
+    <div class="kpi"><div class="val" style="color:#ca8a04">${adiadas}</div><div class="lbl">Adiadas</div></div>
+    <div class="kpi"><div class="val" style="color:#dc2626">${canceladas}</div><div class="lbl">Canceladas</div></div>
+  </div>
+  ${carga > 0 ? `
+  <div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:8px;padding:10px 14px;margin-bottom:4px">
+    <span style="font-size:9pt;color:#6b7280;white-space:nowrap">Horas dadas: <strong style="color:#111827">${horasDadas.toFixed(1)}h</strong> / ${carga}h</span>
+    <div class="prog-bar" style="flex:1"><div class="prog-fill"></div></div>
+    <span style="font-size:10pt;font-weight:700;color:${progresso >= 100 ? "#16a34a" : cor};white-space:nowrap">${progresso.toFixed(0)}%</span>
+  </div>` : `<p style="font-size:9pt;color:#6b7280;margin-bottom:8px">Horas dadas: <strong>${horasDadas.toFixed(1)}h</strong> · Total planeado: <strong>${horasTotal.toFixed(1)}h</strong></p>`}
+
+  ${horarios && horarios.length > 0 ? `
+  <h3>Horários</h3>
+  <table><thead><tr><th>Dia</th><th>Início</th><th>Fim</th><th>Sala</th></tr></thead>
+  <tbody>${linhasHorarios}</tbody></table>` : ""}
+
+  <h3>Registo de Aulas</h3>
+  <table>
+    <thead><tr><th>Nº</th><th>Data</th><th></th><th>Horário</th><th>Sala</th><th>Estado</th><th>Tópico</th></tr></thead>
+    <tbody>${linhasAulas}</tbody>
+  </table>
+
+  <div class="rodape">
+    <span>${config.nome_professor || ""}</span>
+    <span>PlanAula · ${hoje}</span>
+  </div>
+</body></html>`;
 }
 function gerarHTMLPlanoAula(aula, config = {}) {
   const dataFmt = aula.data ? (/* @__PURE__ */ new Date(aula.data + "T12:00:00")).toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
@@ -1261,6 +1463,13 @@ function registerHandlers() {
       return { success: false, error: e.message };
     }
   });
+  electron.ipcMain.handle("pesquisa:global", async (_, query) => {
+    try {
+      return { success: true, data: pesquisarGlobal(query) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   electron.ipcMain.handle("aulas:eliminarDaDisciplina", async (_, disciplina_id) => {
     try {
       return { success: true, data: eliminarAulasDaDisciplina(disciplina_id) };
@@ -1388,6 +1597,15 @@ function registerHandlers() {
   electron.ipcMain.handle("aulas:proximoNumero", async (_, turma_id) => {
     try {
       return { success: true, data: proximoNumeroAula(turma_id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("export:relatorioTurma", async (_, { turma, horarios, aulas, config }) => {
+    try {
+      const html = gerarHTMLRelatorioTurma(turma, horarios, aulas, config || {});
+      const nome = `relatorio-${(turma.designacao || "turma").replace(/\s+/g, "-")}-${(turma.disciplina_nome || "").replace(/\s+/g, "-")}.pdf`;
+      return await imprimirPDF(html, nome);
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -1525,10 +1743,14 @@ function registerHandlers() {
       fs.copyFileSync(dbPath, backupAuto);
       closeDb();
       fs.copyFileSync(filePaths[0], dbPath);
-      return { success: true, message: "Restauro concluído. Reinicie a aplicação para aplicar as alterações." };
+      return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
     }
+  });
+  electron.ipcMain.handle("backup:reiniciar", () => {
+    electron.app.relaunch();
+    electron.app.exit(0);
   });
 }
 const __dirname$1 = path.dirname(url.fileURLToPath(require("url").pathToFileURL(__filename).href));

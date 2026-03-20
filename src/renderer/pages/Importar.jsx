@@ -28,12 +28,17 @@ function gerarTemplate() {
     ['5. Horas no formato HH:MM (ex: 09:00).'],
     [''],
     ['ORDEM DE IMPORTAÇÃO (os nomes devem corresponder EXACTAMENTE):'],
-    ['  Instituições  →  Cursos  →  Disciplinas  →  Turmas  →  Horários'],
+    ['  Instituições  →  Cursos  →  Disciplinas  →  Turmas  →  Horários  →  Aulas (geradas automaticamente)'],
     [''],
     ['  • Cursos      referenciam "instituicao_nome" de Instituições'],
     ['  • Disciplinas referenciam "curso_nome" de Cursos'],
     ['  • Turmas      referenciam "disciplina_nome" de Disciplinas'],
     ['  • Horários    referenciam "turma_nome" de Turmas'],
+    [''],
+    ['  GERAÇÃO AUTOMÁTICA DE AULAS:'],
+    ['  Após importar os Horários, as aulas são geradas automaticamente para todas as turmas'],
+    ['  que tenham data_inicio, data_fim e carga_horaria definidas.'],
+    ['  Aulas já existentes são ignoradas (sem duplicados).'],
     [''],
     ['Registos já existentes com o mesmo nome serão ignorados (sem duplicados).'],
   ]
@@ -61,12 +66,12 @@ function gerarTemplate() {
 
   // ── Disciplinas ──
   const wsD = XLSX.utils.aoa_to_sheet([
-    ['nome *', 'codigo', 'tipo', 'ects', 'descricao', 'curso_nome *', 'instituicao_nome *'],
-    ['Programação Web', 'PW101', 'Teórica', 6, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Bases de Dados', 'BD102', 'Teórico-Prática', 4, '', 'Engenharia Informática', 'Universidade do Porto'],
-    ['Gestão de Projetos', 'GP201', 'Seminário', 3, '', 'Gestão e Administração', 'Instituto Politécnico de Coimbra'],
+    ['nome *', 'codigo', 'tipo', 'ects', 'carga_horaria', 'descricao', 'curso_nome *', 'instituicao_nome *'],
+    ['Programação Web', 'PW101', 'Teórica', 6, 60, '', 'Engenharia Informática', 'Universidade do Porto'],
+    ['Bases de Dados', 'BD102', 'Teórico-Prática', 4, 45, '', 'Engenharia Informática', 'Universidade do Porto'],
+    ['Gestão de Projetos', 'GP201', 'Seminário', 3, 30, '', 'Gestão e Administração', 'Instituto Politécnico de Coimbra'],
   ])
-  wsD['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 6 }, { wch: 20 }, { wch: 28 }, { wch: 35 }]
+  wsD['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 6 }, { wch: 14 }, { wch: 20 }, { wch: 28 }, { wch: 35 }]
   XLSX.utils.book_append_sheet(wb, wsD, 'Disciplinas')
 
   // ── Turmas ──
@@ -229,7 +234,7 @@ async function importarWorkbook(wb, setProgresso) {
         nome,
         codigo: norm(row, 'codigo') || null,
         area_cientifica: '',
-        carga_horaria: 0,
+        carga_horaria: normNum(row, 'carga_horaria', 0),
         ects: normNum(row, 'ects'),
         tipo,
         descricao: norm(row, 'descricao') || null,
@@ -345,6 +350,40 @@ async function importarWorkbook(wb, setProgresso) {
     } catch (e) { err(`Horário "${turmaDesig}": ${e.message}`) }
   }
 
+  // ── Gerar Aulas Automaticamente ──
+  info('A gerar aulas automaticamente…')
+  // Recarregar turmas actualizadas (com datas)
+  turmas = await ipc(() => window.api.turmas.listar())
+  let totalAulasGeradas = 0
+  for (const row of rowsT) {
+    const designacao = norm(row, 'designacao')
+    const discNome = norm(row, 'disciplina_nome')
+    if (!designacao) continue
+    const disc = disciplinas.find(d => d.nome === discNome)
+    const turma = turmas.find(t => t.designacao === designacao && (!disc || t.disciplina_id === disc.id))
+    if (!turma) continue
+    const dataInicio = turma.data_inicio || normDate(row, 'data_inicio')
+    const dataFim = turma.data_fim || normDate(row, 'data_fim')
+    if (!dataInicio || !dataFim) {
+      info(`  Turma "${designacao}": sem data_inicio/data_fim — aulas não geradas`)
+      continue
+    }
+    try {
+      const aulasGeradas = await ipc(() => window.api.aulas.gerarAutomatico(turma.id, dataInicio, dataFim))
+      const n = Array.isArray(aulasGeradas) ? aulasGeradas.length : 0
+      totalAulasGeradas += n
+      if (n > 0) ok(`Aulas geradas: ${designacao} (${discNome}) — ${n} aulas`)
+      else ok(`Aulas já existentes: ${designacao} (${discNome}) — sem novas aulas`)
+    } catch (e) {
+      if (e.message?.includes('Sem horários')) {
+        info(`  Turma "${designacao}": sem horários — aulas não geradas`)
+      } else {
+        err(`Gerar aulas "${designacao}": ${e.message}`)
+      }
+    }
+  }
+  if (totalAulasGeradas > 0) ok(`Total de aulas geradas: ${totalAulasGeradas}`)
+
   return { log, erros }
 }
 
@@ -455,7 +494,7 @@ export default function Importar() {
           {[
             { sheet: 'Instituições', campos: 'nome' },
             { sheet: 'Cursos', campos: 'nome, instituicao_nome, ano_letivo, valor_hora' },
-            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, ects, descricao, curso_nome, instituicao_nome' },
+            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, ects, carga_horaria, descricao, curso_nome, instituicao_nome' },
             { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre' },
             { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana, hora_inicio, hora_fim, sala' },
           ].map(({ sheet, campos }) => (
@@ -467,6 +506,9 @@ export default function Importar() {
         </div>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
           Dias da semana: 0=Domingo · 1=Segunda · 2=Terça · 3=Quarta · 4=Quinta · 5=Sexta · 6=Sábado
+        </p>
+        <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
+          As aulas são geradas automaticamente após importar os horários, para turmas com data_inicio e data_fim definidas.
         </p>
       </div>
 

@@ -73,7 +73,17 @@ electron.contextBridge.exposeInMainWorld("api", {
   // Exportação PDF
   exports: {
     aulaPlano: (aula, config) => invoke("export:aulaPlano", { aula, config }),
-    relatorioFinanceiro: (dados, tipo, ano, mes, config) => invoke("export:relatorioFinanceiro", { dados, tipo, ano, mes, config })
+    relatorioFinanceiro: (dados, tipo, ano, mes, config) => invoke("export:relatorioFinanceiro", { dados, tipo, ano, mes, config }),
+    relatorioTurma: (turma, horarios, aulas, config) => invoke("export:relatorioTurma", { turma, horarios, aulas, config })
+  },
+  backup: {
+    exportar: () => invoke("backup:exportar"),
+    importar: () => invoke("backup:importar"),
+    reiniciar: () => invoke("backup:reiniciar")
+  },
+  // Pesquisa global
+  pesquisa: {
+    global: (query) => invoke("pesquisa:global", query)
   },
   // Instituições
   instituicoes: {
@@ -94,11 +104,6 @@ electron.contextBridge.exposeInMainWorld("api", {
     listar: (instituicao_id) => invoke("periodosNaoLetivos:listar", instituicao_id),
     criar: (dados) => invoke("periodosNaoLetivos:criar", dados),
     eliminar: (id) => invoke("periodosNaoLetivos:eliminar", id)
-  },
-  // Backup
-  backup: {
-    exportar: () => invoke("backup:exportar"),
-    importar: () => invoke("backup:importar")
   },
   // Outros Rendimentos
   outrosRendimentos: {
