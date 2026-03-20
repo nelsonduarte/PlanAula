@@ -126,7 +126,12 @@ export default function Disciplinas() {
   )
 
   function calcularProgresso(disc) {
-    const aulasDisc = aulas.filter(a => a.disciplina_id === disc.id && a.estado === 'Realizada')
+    const hoje = new Date().toISOString().split('T')[0]
+    const aulasDisc = aulas.filter(a =>
+      a.disciplina_id === disc.id &&
+      a.estado !== 'Cancelada' &&
+      a.data <= hoje
+    )
     const horas = aulasDisc.reduce((sum, a) => {
       const [hi, mi] = (a.hora_inicio || '00:00').split(':').map(Number)
       const [hf, mf] = (a.hora_fim || '00:00').split(':').map(Number)
