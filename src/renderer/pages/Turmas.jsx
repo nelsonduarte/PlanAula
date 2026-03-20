@@ -56,6 +56,18 @@ export default function Turmas() {
     return h || []
   }
 
+  async function exportarRelatorio(turma) {
+    const [h, aulasData, config] = await Promise.all([
+      carregarHorarios(turma.id),
+      db.listarAulas({ turma_id: turma.id }),
+      db.obterConfiguracoes()
+    ])
+    const disc = disciplinas.find(d => d.id === turma.disciplina_id)
+    const turmaComInfo = { ...turma, curso_nome: disc?.curso_nome || '' }
+    const aulas = (aulasData || []).sort((a, b) => a.data.localeCompare(b.data))
+    await db.exportarRelatorioTurma(turmaComInfo, h, aulas, config || {})
+  }
+
   function abrirCriar() {
     setEditando(null)
     const ano = new Date().getFullYear()
@@ -236,6 +248,7 @@ export default function Turmas() {
                       >
                         🕐 Horários
                       </button>
+                      <button onClick={() => exportarRelatorio(turma)} className="btn-secondary text-xs py-1.5 px-3" title="Exportar relatório PDF">📄</button>
                       <button onClick={() => abrirEditar(turma)} className="btn-secondary text-xs py-1.5 px-3">✏️</button>
                       <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
                     </div>

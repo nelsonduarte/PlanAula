@@ -9,6 +9,129 @@ function formatCur(v) {
   return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0)
 }
 
+const DIAS_SEMANA_PT = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado']
+
+function gerarHTMLRelatorioTurma(turma, horarios, aulas, config = {}) {
+  const cor = turma.cor || '#2563eb'
+  const hoje = new Date().toLocaleDateString('pt-PT')
+
+  const fmtData = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-PT') : '—'
+  const fmtDiaSemana = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short' }) : ''
+
+  // Calcular estatísticas com lógica automática de estado
+  const hojeISO = new Date().toISOString().split('T')[0]
+  const estadoVis = a => (a.estado === 'Adiada' || a.estado === 'Cancelada') ? a.estado : a.data <= hojeISO ? 'Realizada' : 'Planeada'
+
+  const realizadas = aulas.filter(a => estadoVis(a) === 'Realizada').length
+  const planeadas  = aulas.filter(a => estadoVis(a) === 'Planeada').length
+  const adiadas    = aulas.filter(a => estadoVis(a) === 'Adiada').length
+  const canceladas = aulas.filter(a => estadoVis(a) === 'Cancelada').length
+
+  const horasDadas = aulas.filter(a => estadoVis(a) === 'Realizada').reduce((s, a) => {
+    const [hi, mi] = (a.hora_inicio || '0:0').split(':').map(Number)
+    const [hf, mf] = (a.hora_fim    || '0:0').split(':').map(Number)
+    return s + (hf * 60 + mf - hi * 60 - mi) / 60
+  }, 0)
+
+  const horasTotal = aulas.filter(a => estadoVis(a) !== 'Cancelada').reduce((s, a) => {
+    const [hi, mi] = (a.hora_inicio || '0:0').split(':').map(Number)
+    const [hf, mf] = (a.hora_fim    || '0:0').split(':').map(Number)
+    return s + (hf * 60 + mf - hi * 60 - mi) / 60
+  }, 0)
+
+  const carga = turma.carga_horaria || 0
+  const progresso = carga > 0 ? Math.min(100, (horasDadas / carga) * 100) : null
+
+  const corEstado = e => e === 'Realizada' ? '#16a34a' : e === 'Planeada' ? '#2563eb' : e === 'Adiada' ? '#ca8a04' : '#dc2626'
+
+  const linhasAulas = aulas.map(a => {
+    const ev = estadoVis(a)
+    return `<tr>
+      <td>${a.numero != null ? a.numero : '—'}</td>
+      <td>${fmtData(a.data)}</td>
+      <td style="color:#6b7280;font-size:9pt">${fmtDiaSemana(a.data)}</td>
+      <td>${a.hora_inicio || ''}–${a.hora_fim || ''}</td>
+      <td>${a.sala || '—'}</td>
+      <td><span class="badge" style="background:${corEstado(ev)}">${ev}</span></td>
+      <td style="color:#374151">${a.topico || ''}</td>
+    </tr>`
+  }).join('')
+
+  const linhasHorarios = (horarios || []).map(h =>
+    `<tr><td>${DIAS_SEMANA_PT[h.dia_semana] || h.dia_semana}</td><td>${h.hora_inicio}</td><td>${h.hora_fim}</td><td>${h.sala || '—'}</td></tr>`
+  ).join('')
+
+  return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Arial,sans-serif; font-size:10pt; color:#1f2937; background:white; padding:28px 32px; }
+  .topo { border-left:5px solid ${cor}; padding-left:14px; margin-bottom:18px; }
+  .topo h1 { font-size:18pt; font-weight:700; color:#111827; }
+  .topo h2 { font-size:12pt; color:#4b5563; margin-top:3px; }
+  .inst { font-size:9pt; color:#9ca3af; margin-bottom:6px; }
+  .meta { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; background:#f9fafb; border-radius:8px; padding:12px; margin-bottom:18px; }
+  .meta-item label { font-size:8pt; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; display:block; }
+  .meta-item span { font-weight:600; color:#111827; font-size:10pt; }
+  h3 { font-size:10pt; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin:16px 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+  th { text-align:left; padding:6px 8px; background:#f3f4f6; font-size:8.5pt; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; border-bottom:2px solid #e5e7eb; }
+  td { padding:5px 8px; border-bottom:1px solid #f3f4f6; color:#374151; vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:8pt; font-weight:600; color:white; }
+  .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:14px; }
+  .kpi { background:#f9fafb; border-radius:8px; padding:10px 12px; text-align:center; }
+  .kpi .val { font-size:16pt; font-weight:700; }
+  .kpi .lbl { font-size:8pt; color:#9ca3af; margin-top:2px; }
+  .prog-bar { height:10px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-top:8px; }
+  .prog-fill { height:100%; border-radius:999px; background:${progresso !== null && progresso >= 100 ? '#16a34a' : cor}; width:${progresso !== null ? progresso : 0}%; }
+  .rodape { margin-top:28px; border-top:1px solid #e5e7eb; padding-top:8px; font-size:8pt; color:#9ca3af; display:flex; justify-content:space-between; }
+</style></head><body>
+  <div class="topo">
+    ${config.instituicao ? `<div class="inst">${config.instituicao}${config.departamento ? ' · '+config.departamento : ''}</div>` : ''}
+    <h1>${turma.designacao || ''}</h1>
+    <h2>${turma.disciplina_nome || ''}${turma.curso_nome ? ' · ' + turma.curso_nome : ''}</h2>
+  </div>
+
+  <div class="meta">
+    <div class="meta-item"><label>Ano Letivo</label><span>${turma.ano_letivo || '—'}</span></div>
+    <div class="meta-item"><label>Semestre</label><span>${turma.semestre ? turma.semestre + 'º' : '—'}</span></div>
+    <div class="meta-item"><label>Período</label><span>${fmtData(turma.data_inicio)} → ${fmtData(turma.data_fim)}</span></div>
+    <div class="meta-item"><label>Carga Horária</label><span>${carga > 0 ? carga + 'h' : '—'}</span></div>
+  </div>
+
+  <h3>Resumo</h3>
+  <div class="kpis">
+    <div class="kpi"><div class="val" style="color:#111827">${aulas.length}</div><div class="lbl">Total Aulas</div></div>
+    <div class="kpi"><div class="val" style="color:#16a34a">${realizadas}</div><div class="lbl">Realizadas</div></div>
+    <div class="kpi"><div class="val" style="color:#2563eb">${planeadas}</div><div class="lbl">Planeadas</div></div>
+    <div class="kpi"><div class="val" style="color:#ca8a04">${adiadas}</div><div class="lbl">Adiadas</div></div>
+    <div class="kpi"><div class="val" style="color:#dc2626">${canceladas}</div><div class="lbl">Canceladas</div></div>
+  </div>
+  ${carga > 0 ? `
+  <div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:8px;padding:10px 14px;margin-bottom:4px">
+    <span style="font-size:9pt;color:#6b7280;white-space:nowrap">Horas dadas: <strong style="color:#111827">${horasDadas.toFixed(1)}h</strong> / ${carga}h</span>
+    <div class="prog-bar" style="flex:1"><div class="prog-fill"></div></div>
+    <span style="font-size:10pt;font-weight:700;color:${progresso >= 100 ? '#16a34a' : cor};white-space:nowrap">${progresso.toFixed(0)}%</span>
+  </div>` : `<p style="font-size:9pt;color:#6b7280;margin-bottom:8px">Horas dadas: <strong>${horasDadas.toFixed(1)}h</strong> · Total planeado: <strong>${horasTotal.toFixed(1)}h</strong></p>`}
+
+  ${horarios && horarios.length > 0 ? `
+  <h3>Horários</h3>
+  <table><thead><tr><th>Dia</th><th>Início</th><th>Fim</th><th>Sala</th></tr></thead>
+  <tbody>${linhasHorarios}</tbody></table>` : ''}
+
+  <h3>Registo de Aulas</h3>
+  <table>
+    <thead><tr><th>Nº</th><th>Data</th><th></th><th>Horário</th><th>Sala</th><th>Estado</th><th>Tópico</th></tr></thead>
+    <tbody>${linhasAulas}</tbody>
+  </table>
+
+  <div class="rodape">
+    <span>${config.nome_professor || ''}</span>
+    <span>PlanAula · ${hoje}</span>
+  </div>
+</body></html>`
+}
+
 function gerarHTMLPlanoAula(aula, config = {}) {
   const dataFmt = aula.data
     ? new Date(aula.data + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -415,6 +538,14 @@ export function registerHandlers() {
   })
 
   // ─── Exportação PDF ───────────────────────────────────────────────────────
+  ipcMain.handle('export:relatorioTurma', async (_, { turma, horarios, aulas, config }) => {
+    try {
+      const html = gerarHTMLRelatorioTurma(turma, horarios, aulas, config || {})
+      const nome = `relatorio-${(turma.designacao || 'turma').replace(/\s+/g, '-')}-${(turma.disciplina_nome || '').replace(/\s+/g, '-')}.pdf`
+      return await imprimirPDF(html, nome)
+    } catch (e) { return { success: false, error: e.message } }
+  })
+
   ipcMain.handle('export:aulaPlano', async (_, { aula, config }) => {
     try {
       const html = gerarHTMLPlanoAula(aula, config || {})
