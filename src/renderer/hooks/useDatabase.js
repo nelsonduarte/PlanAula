@@ -276,6 +276,11 @@ export function useDatabase() {
     { success: false, error: 'Não disponível fora do Electron' }
   )
 
+  const pesquisarGlobal = (query) => execute(
+    () => window.api.pesquisa.global(query),
+    { aulas: [], turmas: [], disciplinas: [] }
+  )
+
   const exportarRelatorioTurma = (turma, horarios, aulas, config) => execute(
     () => window.api.exports.relatorioTurma(turma, horarios, aulas, config),
     { success: false, error: 'Não disponível fora do Electron' }
@@ -325,6 +330,7 @@ export function useDatabase() {
     obterConfiguracoes, salvarConfiguracoes,
     obterEstatisticas,
     exportarAulaPlano, exportarRelatorioFinanceiro, exportarRelatorioTurma,
+    pesquisarGlobal,
     exportarBackup, importarBackup,
     listarOutrosRendimentos, criarOutroRendimento, editarOutroRendimento, eliminarOutroRendimento,
     listarPeriodosNaoLetivos, criarPeriodoNaoLetivo, eliminarPeriodoNaoLetivo

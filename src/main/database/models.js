@@ -837,6 +837,41 @@ export function eliminarPeriodoNaoLetivo(id) {
   return { success: true }
 }
 
+// ─── Pesquisa Global ──────────────────────────────────────────────────────────
+
+export function pesquisarGlobal(query) {
+  const db = getDb()
+  if (!query || query.trim().length < 2) return { aulas: [], turmas: [], disciplinas: [] }
+  const q = `%${query.trim()}%`
+
+  const aulas = db.prepare(`
+    SELECT a.id, a.data, a.hora_inicio, a.hora_fim, a.topico, a.estado,
+           t.designacao as turma_nome, t.cor as turma_cor, d.nome as disciplina_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE a.topico LIKE ? OR t.designacao LIKE ? OR d.nome LIKE ? OR a.data LIKE ?
+    ORDER BY a.data DESC LIMIT 8
+  `).all(q, q, q, q)
+
+  const turmas = db.prepare(`
+    SELECT t.id, t.designacao, t.cor, t.ano_letivo, d.nome as disciplina_nome
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE t.designacao LIKE ? OR d.nome LIKE ?
+    LIMIT 5
+  `).all(q, q)
+
+  const disciplinas = db.prepare(`
+    SELECT id, nome, codigo, carga_horaria
+    FROM disciplinas
+    WHERE nome LIKE ? OR codigo LIKE ?
+    LIMIT 5
+  `).all(q, q)
+
+  return { aulas, turmas, disciplinas }
+}
+
 // ─── Estatísticas ─────────────────────────────────────────────────────────────
 
 export function obterEstatisticas(ano_letivo) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
+import PesquisaGlobal from './PesquisaGlobal.jsx'
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false)
@@ -41,6 +42,7 @@ export default function Layout() {
           </button>
 
           <div className="flex items-center gap-3">
+            <PesquisaGlobal />
             {/* Theme toggle */}
             <button
               onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}

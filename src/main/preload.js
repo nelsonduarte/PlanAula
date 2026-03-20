@@ -90,6 +90,11 @@ contextBridge.exposeInMainWorld('api', {
       invoke('export:relatorioTurma', { turma, horarios, aulas, config }),
   },
 
+  // Pesquisa global
+  pesquisa: {
+    global: (query) => invoke('pesquisa:global', query),
+  },
+
   // Instituições
   instituicoes: {
     listar: () => invoke('instituicoes:listar'),
