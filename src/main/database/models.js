@@ -546,7 +546,8 @@ export function importarFeriadosNacionais(ano) {
     criados.push(criarDiaNaoLetivo({ data, descricao: f.desc, tipo: 'feriado' }))
   }
   for (const m of moveis) {
-    const data = m.data.toISOString().split('T')[0]
+    const d = m.data
+    const data = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     criados.push(criarDiaNaoLetivo({ data, descricao: m.desc, tipo: 'feriado' }))
   }
   return criados
