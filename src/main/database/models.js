@@ -863,7 +863,7 @@ export function obterEstatisticas(ano_letivo) {
     SELECT ${estadoVirtual} as estado, COUNT(*) as total
     FROM aulas
     WHERE strftime('%Y', data) = ?
-    GROUP BY estado
+    GROUP BY 1
   `).all(ano)
 
   // Horas por disciplina (apenas aulas não canceladas)
