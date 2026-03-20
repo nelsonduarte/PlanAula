@@ -221,9 +221,8 @@ export default function Definicoes() {
     if (!await confirm('Isto irá substituir todos os dados actuais pelo ficheiro de backup. Continuar?', { danger: true })) return
     setBackupMsg('')
     const result = await db.importarBackup()
-    if (result?.success) setBackupMsg('✓ ' + result.message)
+    if (result?.success) setBackupMsg('reiniciar')
     else if (!result?.cancelled) setBackupMsg('Erro ao restaurar backup.')
-    setTimeout(() => setBackupMsg(''), 8000)
   }
 
   if (loading) {
@@ -422,20 +421,32 @@ export default function Definicoes() {
       {/* Backup */}
       <div className="card">
         <h2 className="section-title mb-1">Cópia de Segurança</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Exportar ou restaurar todos os dados da aplicação.</p>
-        <div className="flex flex-wrap gap-3 items-center">
-          <button onClick={fazerBackup} className="btn-primary">
-            ⬇️ Exportar Backup
-          </button>
-          <button onClick={restaurarBackup} className="btn-secondary">
-            ⬆️ Restaurar Backup
-          </button>
-          {backupMsg && (
-            <span className={`text-sm font-medium ${backupMsg.startsWith('✓') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {backupMsg}
-            </span>
-          )}
-        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Exportar ou restaurar todos os dados da aplicação. Útil para transferir dados entre máquinas.</p>
+        {backupMsg === 'reiniciar' ? (
+          <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium text-green-800 dark:text-green-300">✓ Backup restaurado com sucesso</p>
+              <p className="text-sm text-green-700 dark:text-green-400 mt-0.5">Reinicia a aplicação para aplicar os dados importados.</p>
+            </div>
+            <button onClick={() => db.reiniciarApp()} className="btn-primary flex-shrink-0">
+              Reiniciar agora
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-3 items-center">
+            <button onClick={fazerBackup} className="btn-primary">
+              ⬇️ Exportar Backup
+            </button>
+            <button onClick={restaurarBackup} className="btn-secondary">
+              ⬆️ Restaurar Backup
+            </button>
+            {backupMsg && (
+              <span className={`text-sm font-medium ${backupMsg.startsWith('✓') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {backupMsg}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* About */}

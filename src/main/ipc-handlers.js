@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import fs from 'fs'
 import * as models from './database/models.js'
 import { getDb, closeDb } from './database/db.js'
@@ -656,7 +656,12 @@ export function registerHandlers() {
       closeDb()
       fs.copyFileSync(filePaths[0], dbPath)
 
-      return { success: true, message: 'Restauro concluído. Reinicie a aplicação para aplicar as alterações.' }
+      return { success: true }
     } catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('backup:reiniciar', () => {
+    app.relaunch()
+    app.exit(0)
   })
 }

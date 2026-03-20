@@ -292,6 +292,8 @@ export function useDatabase() {
     { success: false, error: 'Não disponível fora do Electron' }
   )
 
+  const reiniciarApp = () => window.api?.backup?.reiniciar?.()
+
   const importarBackup = () => execute(
     () => window.api.backup.importar(),
     { success: false, error: 'Não disponível fora do Electron' }
@@ -330,7 +332,7 @@ export function useDatabase() {
     obterConfiguracoes, salvarConfiguracoes,
     obterEstatisticas,
     exportarAulaPlano, exportarRelatorioFinanceiro, exportarRelatorioTurma,
-    pesquisarGlobal,
+    pesquisarGlobal, reiniciarApp,
     exportarBackup, importarBackup,
     listarOutrosRendimentos, criarOutroRendimento, editarOutroRendimento, eliminarOutroRendimento,
     listarPeriodosNaoLetivos, criarPeriodoNaoLetivo, eliminarPeriodoNaoLetivo

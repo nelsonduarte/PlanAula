@@ -90,6 +90,12 @@ contextBridge.exposeInMainWorld('api', {
       invoke('export:relatorioTurma', { turma, horarios, aulas, config }),
   },
 
+  backup: {
+    exportar: () => invoke('backup:exportar'),
+    importar: () => invoke('backup:importar'),
+    reiniciar: () => invoke('backup:reiniciar'),
+  },
+
   // Pesquisa global
   pesquisa: {
     global: (query) => invoke('pesquisa:global', query),
@@ -118,11 +124,6 @@ contextBridge.exposeInMainWorld('api', {
     eliminar: (id) => invoke('periodosNaoLetivos:eliminar', id),
   },
 
-  // Backup
-  backup: {
-    exportar: () => invoke('backup:exportar'),
-    importar: () => invoke('backup:importar'),
-  },
 
   // Outros Rendimentos
   outrosRendimentos: {
