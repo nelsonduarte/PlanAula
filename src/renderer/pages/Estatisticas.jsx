@@ -10,6 +10,7 @@ const CORES_GRAFICO = [
   '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#14B8A6'
 ]
 
+const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
 function CustomTooltip({ active, payload, label }) {
@@ -18,12 +19,21 @@ function CustomTooltip({ active, payload, label }) {
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-lg text-sm">
         <p className="font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</p>
         {payload.map((p, i) => (
-          <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}</p>
+          <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' ? p.value % 1 === 0 ? p.value : p.value.toFixed(1) : p.value}</p>
         ))}
       </div>
     )
   }
   return null
+}
+
+function KpiCard({ value, label, color }) {
+  return (
+    <div className="card text-center">
+      <p className={`text-3xl font-bold ${color}`}>{value}</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+    </div>
+  )
 }
 
 export default function Estatisticas() {
@@ -54,30 +64,33 @@ export default function Estatisticas() {
 
   if (!stats) return null
 
-  // Prepare chart data
+  // Dados para gráficos
   const dadosPorEstado = stats.porEstado.map(e => ({ name: e.estado, value: e.total }))
 
   const dadosPorDisciplina = stats.porDisciplina.map((d, i) => ({
-    name: d.disciplina_nome.length > 15 ? d.disciplina_nome.substring(0, 15) + '…' : d.disciplina_nome,
-    horas: parseFloat(d.total_horas?.toFixed(1) || 0),
+    name: d.disciplina_nome.length > 18 ? d.disciplina_nome.substring(0, 18) + '…' : d.disciplina_nome,
+    horas: parseFloat((d.total_horas || 0).toFixed(1)),
     aulas: d.total_aulas,
     fill: CORES_GRAFICO[i % CORES_GRAFICO.length]
   }))
 
   const dadosEvolucao = stats.evolucaoMensal.map(m => {
     const [, mesStr] = m.mes.split('-')
-    const mesIdx = parseInt(mesStr) - 1
     return {
-      mes: MESES_ABREV[mesIdx] || m.mes,
+      mes: MESES_ABREV[parseInt(mesStr) - 1] || m.mes,
       aulas: m.total_aulas,
-      horas: parseFloat(m.total_horas?.toFixed(1) || 0)
+      horas: parseFloat((m.total_horas || 0).toFixed(1))
     }
   })
 
-  // Calculate avg hours per week
-  const totalHoras = stats.porDisciplina.reduce((s, d) => s + (d.total_horas || 0), 0)
-  const semanas = 52
-  const mediaHorasSemana = (totalHoras / semanas).toFixed(1)
+  const dadosDiaSemana = DIAS_SEMANA.map((nome, i) => {
+    const found = stats.porDiaSemana.find(d => d.dia === i)
+    return { dia: nome, aulas: found?.total_aulas || 0, horas: parseFloat((found?.total_horas || 0).toFixed(1)) }
+  }).filter((_, i) => i >= 1 && i <= 5) // apenas Seg-Sex
+
+  const totalHoras = stats.totalHoras || 0
+  const mesesComDados = stats.evolucaoMensal.length || 1
+  const mediaHorasMes = (totalHoras / mesesComDados).toFixed(1)
 
   return (
     <div className="space-y-6">
@@ -94,55 +107,36 @@ export default function Estatisticas() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.totalAulas}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Total Aulas</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.realizadas}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Realizadas</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.taxaConclusao}%</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Taxa de Realização</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{mediaHorasSemana}h</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Média Semanal</p>
-        </div>
+        <KpiCard value={stats.totalAulas} label="Total de Aulas" color="text-blue-600 dark:text-blue-400" />
+        <KpiCard value={`${totalHoras.toFixed(1)}h`} label="Total de Horas" color="text-indigo-600 dark:text-indigo-400" />
+        <KpiCard value={stats.realizadas} label="Realizadas" color="text-green-600 dark:text-green-400" />
+        <KpiCard value={`${stats.taxaConclusao}%`} label="Taxa de Realização" color="text-purple-600 dark:text-purple-400" />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard value={stats.adiadas} label="Adiadas" color="text-yellow-600 dark:text-yellow-400" />
+        <KpiCard value={stats.canceladas} label="Canceladas" color="text-red-600 dark:text-red-400" />
+        <KpiCard value={`${mediaHorasMes}h`} label="Média Mensal" color="text-cyan-600 dark:text-cyan-400" />
+        <KpiCard value={stats.porTurma.length} label="Turmas com Aulas" color="text-teal-600 dark:text-teal-400" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Status pie chart */}
+        {/* Pie — estado */}
         <div className="card">
           <h2 className="section-title mb-4">Aulas por Estado</h2>
           {dadosPorEstado.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
-              <p className="text-sm">Sem dados</p>
-            </div>
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
-                <Pie
-                  data={dadosPorEstado}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, value }) => `${name}: ${value}`}
-                  labelLine={false}
-                >
-                  {dadosPorEstado.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={
-                        entry.name === 'Realizada' ? '#22C55E' :
-                        entry.name === 'Planeada' ? '#3B82F6' :
-                        entry.name === 'Adiada' ? '#F59E0B' : '#EF4444'
-                      }
-                    />
+                <Pie data={dadosPorEstado} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
+                  paddingAngle={3} dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
+                  {dadosPorEstado.map((entry, i) => (
+                    <Cell key={i} fill={
+                      entry.name === 'Realizada' ? '#22C55E' :
+                      entry.name === 'Planeada'  ? '#3B82F6' :
+                      entry.name === 'Adiada'    ? '#F59E0B' : '#EF4444'
+                    } />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
@@ -152,24 +146,20 @@ export default function Estatisticas() {
           )}
         </div>
 
-        {/* Hours by discipline */}
+        {/* Bar — horas por disciplina */}
         <div className="card">
           <h2 className="section-title mb-4">Horas por Disciplina</h2>
           {dadosPorDisciplina.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
-              <p className="text-sm">Sem dados</p>
-            </div>
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={dadosPorDisciplina} layout="vertical" margin={{ left: 10, right: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis type="number" tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="horas" name="Horas" radius={[0, 4, 4, 0]}>
-                  {dadosPorDisciplina.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
+                  {dadosPorDisciplina.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -177,13 +167,11 @@ export default function Estatisticas() {
         </div>
       </div>
 
-      {/* Monthly evolution */}
+      {/* Evolução mensal */}
       <div className="card">
         <h2 className="section-title mb-4">Evolução Mensal {anoSelecionado}</h2>
         {dadosEvolucao.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500">
-            <p className="text-sm">Sem dados de evolução mensal</p>
-          </div>
+          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados de evolução mensal</p></div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={dadosEvolucao} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -192,72 +180,120 @@ export default function Estatisticas() {
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line
-                type="monotone"
-                dataKey="horas"
-                name="Horas"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="aulas"
-                name="Aulas"
-                stroke="#22C55E"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="horas" name="Horas" stroke="#3B82F6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="aulas" name="Aulas" stroke="#22C55E" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Discipline detail table */}
-      {stats.porDisciplina.length > 0 && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Distribuição por dia da semana */}
         <div className="card">
-          <h2 className="section-title mb-4">Detalhe por Disciplina</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Disciplina</th>
-                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Aulas</th>
-                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Horas</th>
-                  <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">% do Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                {stats.porDisciplina.map((d, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="py-2.5 flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length] }} />
-                      <span className="font-medium text-gray-900 dark:text-white">{d.disciplina_nome}</span>
-                    </td>
-                    <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{d.total_aulas}</td>
-                    <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{(d.total_horas || 0).toFixed(1)}h</td>
-                    <td className="py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
+          <h2 className="section-title mb-4">Aulas Realizadas por Dia da Semana</h2>
+          {dadosDiaSemana.every(d => d.aulas === 0) ? (
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dadosDiaSemana} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="dia" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Bar dataKey="aulas" name="Aulas" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="horas" name="Horas" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Detalhe por disciplina */}
+        {stats.porDisciplina.length > 0 && (
+          <div className="card">
+            <h2 className="section-title mb-4">Detalhe por Disciplina</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Disciplina</th>
+                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Aulas</th>
+                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Horas</th>
+                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">% Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                  {stats.porDisciplina.map((d, i) => (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="py-2.5 flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length] }} />
+                        <span className="font-medium text-gray-900 dark:text-white">{d.disciplina_nome}</span>
+                      </td>
+                      <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{d.total_aulas}</td>
+                      <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{(d.total_horas || 0).toFixed(1)}h</td>
+                      <td className="py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{
                               width: `${totalHoras > 0 ? (d.total_horas / totalHoras * 100) : 0}%`,
                               backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length]
-                            }}
-                          />
+                            }} />
+                          </div>
+                          <span className="text-gray-600 dark:text-gray-400 w-9 text-right">
+                            {totalHoras > 0 ? ((d.total_horas / totalHoras) * 100).toFixed(0) : 0}%
+                          </span>
                         </div>
-                        <span className="text-gray-600 dark:text-gray-400 w-10 text-right">
-                          {totalHoras > 0 ? ((d.total_horas / totalHoras) * 100).toFixed(0) : 0}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Progresso por turma */}
+      {stats.porTurma.length > 0 && (
+        <div className="card">
+          <h2 className="section-title mb-4">Progresso por Turma</h2>
+          <div className="space-y-3">
+            {stats.porTurma.map((t, i) => {
+              const progresso = t.carga_horaria > 0 ? Math.min(100, (t.horas_dadas / t.carga_horaria) * 100) : null
+              return (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{t.turma_nome}</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">{t.disciplina_nome}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 flex gap-3">
+                      <span>{t.horas_dadas.toFixed(1)}h dadas{t.carga_horaria > 0 ? ` / ${t.carga_horaria}h` : ''}</span>
+                      <span className="text-gray-400">·</span>
+                      <span>{t.total_aulas} aulas</span>
+                    </div>
+                  </div>
+                  {progresso !== null ? (
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${progresso}%`,
+                          backgroundColor: progresso >= 100 ? '#22C55E' : progresso >= 50 ? '#3B82F6' : '#F59E0B'
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-400" style={{ width: '100%', opacity: 0.3 }} />
+                    </div>
+                  )}
+                  {progresso !== null && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 text-right">{progresso.toFixed(0)}%</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

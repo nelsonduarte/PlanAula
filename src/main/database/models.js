@@ -843,42 +843,92 @@ export function obterEstatisticas(ano_letivo) {
 
   const anoAtual = ano_letivo || new Date().getFullYear()
   const [anoInicio] = String(anoAtual).split('/')
+  const ano = String(anoInicio)
 
-  // Aulas por estado
+  // Estado virtual: Adiada/Cancelada têm precedência; senão data passada=Realizada, futura=Planeada
+  const estadoVirtual = `
+    CASE
+      WHEN estado IN ('Adiada','Cancelada') THEN estado
+      WHEN data <= date('now') THEN 'Realizada'
+      ELSE 'Planeada'
+    END
+  `
+  const duracaoMin = `(
+    CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER) -
+    CAST(substr(hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(hora_inicio,4,2) AS INTEGER)
+  )`
+
+  // Aulas por estado (com lógica automática)
   const porEstado = db.prepare(`
-    SELECT estado, COUNT(*) as total FROM aulas
+    SELECT ${estadoVirtual} as estado, COUNT(*) as total
+    FROM aulas
     WHERE strftime('%Y', data) = ?
     GROUP BY estado
-  `).all(String(anoInicio))
+  `).all(ano)
 
-  // Horas por disciplina
+  // Horas por disciplina (apenas aulas não canceladas)
   const porDisciplina = db.prepare(`
     SELECT d.nome as disciplina_nome,
            COUNT(a.id) as total_aulas,
-           SUM((strftime('%H', a.hora_fim) * 60 + strftime('%M', a.hora_fim) -
-                strftime('%H', a.hora_inicio) * 60 - strftime('%M', a.hora_inicio)) / 60.0) as total_horas
+           SUM(${duracaoMin} / 60.0) as total_horas
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     WHERE strftime('%Y', a.data) = ? AND a.estado != 'Cancelada'
     GROUP BY d.id
     ORDER BY total_horas DESC
-  `).all(String(anoInicio))
+  `).all(ano)
 
   // Evolução mensal
   const evolucaoMensal = db.prepare(`
-    SELECT strftime('%Y-%m', data) as mes, COUNT(*) as total_aulas,
-           SUM((strftime('%H', hora_fim) * 60 + strftime('%M', hora_fim) -
-                strftime('%H', hora_inicio) * 60 - strftime('%M', hora_inicio)) / 60.0) as total_horas
+    SELECT strftime('%Y-%m', data) as mes,
+           COUNT(*) as total_aulas,
+           SUM(${duracaoMin} / 60.0) as total_horas
     FROM aulas
     WHERE strftime('%Y', data) = ? AND estado != 'Cancelada'
-    GROUP BY mes
-    ORDER BY mes
-  `).all(String(anoInicio))
+    GROUP BY mes ORDER BY mes
+  `).all(ano)
+
+  // Progresso por turma: horas dadas vs carga horária
+  const porTurma = db.prepare(`
+    SELECT t.designacao as turma_nome,
+           d.nome as disciplina_nome,
+           t.carga_horaria,
+           COUNT(a.id) as total_aulas,
+           COALESCE(SUM(CASE WHEN a.estado != 'Cancelada' AND a.data <= date('now')
+             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_dadas,
+           COALESCE(SUM(CASE WHEN a.estado != 'Cancelada'
+             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_total
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN aulas a ON a.turma_id = t.id AND strftime('%Y', a.data) = ?
+    GROUP BY t.id
+    HAVING horas_total > 0
+    ORDER BY horas_dadas DESC
+  `).all(ano)
+
+  // Distribuição por dia da semana (aulas já realizadas)
+  const porDiaSemana = db.prepare(`
+    SELECT CAST(strftime('%w', data) AS INTEGER) as dia,
+           COUNT(*) as total_aulas,
+           SUM(${duracaoMin} / 60.0) as total_horas
+    FROM aulas
+    WHERE strftime('%Y', data) = ?
+      AND estado NOT IN ('Cancelada','Adiada')
+      AND data <= date('now')
+    GROUP BY dia ORDER BY dia
+  `).all(ano)
 
   const totalAulas = porEstado.reduce((s, r) => s + r.total, 0)
   const realizadas = porEstado.find(r => r.estado === 'Realizada')?.total || 0
-  const taxaConclusao = totalAulas > 0 ? (realizadas / totalAulas * 100).toFixed(1) : 0
+  const adiadas = porEstado.find(r => r.estado === 'Adiada')?.total || 0
+  const canceladas = porEstado.find(r => r.estado === 'Cancelada')?.total || 0
+  const totalHoras = porDisciplina.reduce((s, d) => s + (d.total_horas || 0), 0)
+  const taxaConclusao = (realizadas + adiadas + canceladas) > 0
+    ? (realizadas / (totalAulas) * 100).toFixed(1) : 0
 
-  return { porEstado, porDisciplina, evolucaoMensal, totalAulas, realizadas, taxaConclusao }
+  return {
+    porEstado, porDisciplina, evolucaoMensal, porTurma, porDiaSemana,
+    totalAulas, realizadas, adiadas, canceladas, totalHoras, taxaConclusao
+  }
 }
