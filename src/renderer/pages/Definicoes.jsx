@@ -605,6 +605,13 @@ export default function Definicoes() {
             <button onClick={restaurarBackup} className="btn-secondary">
               ⬆️ Restaurar Backup
             </button>
+            <button onClick={async () => {
+              const res = await window.api.exports.mobileHTML()
+              if (res?.success) setBackupMsg('✓ HTML mobile exportado')
+              else if (!res?.cancelled) setBackupMsg('Erro ao exportar HTML')
+            }} className="btn-secondary">
+              📱 Exportar Mobile
+            </button>
             {backupMsg && (
               <span className={`text-sm font-medium ${backupMsg.startsWith('✓') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                 {backupMsg}

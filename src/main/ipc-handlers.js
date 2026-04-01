@@ -284,6 +284,183 @@ function gerarHTMLRelatorioFinanceiro(dados, tipo, ano, mes, config = {}) {
 </body></html>`
 }
 
+function gerarHTMLMobile(dadosJSON, config) {
+  return `<!DOCTYPE html>
+<html lang="pt"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PlanAula — ${config.nome_professor || 'Horário'}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--accent:#3b82f6}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:0;min-height:100vh}
+.header{background:var(--card);padding:16px;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.header h1{font-size:18px;font-weight:700}.header p{font-size:12px;color:var(--muted);margin-top:2px}
+.nav{display:flex;gap:0;background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:56px;z-index:9}
+.nav button{flex:1;padding:10px;border:none;background:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+.nav button.active{color:var(--accent);border-bottom:2px solid var(--accent)}
+.month-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
+.month-nav button{background:none;border:none;color:var(--accent);font-size:24px;padding:8px 16px;cursor:pointer}
+.month-nav span{font-size:16px;font-weight:600}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;padding:4px;background:var(--bg)}
+.cal-head{text-align:center;font-size:11px;color:var(--muted);padding:8px 0;font-weight:600}
+.cal-day{background:var(--card);min-height:70px;padding:4px;border-radius:4px;position:relative}
+.cal-day.empty{background:transparent;min-height:0}.cal-day.today{outline:2px solid var(--accent);outline-offset:-1px}
+.cal-day.holiday{background:#3b1a1a}.cal-num{font-size:11px;font-weight:600;margin-bottom:2px}
+.cal-ev{font-size:9px;padding:2px 4px;margin-bottom:1px;border-radius:3px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.cal-holiday{font-size:9px;color:#f87171;font-style:italic}
+.tab{display:none;padding:8px}.tab.active{display:block}
+.aula-card{background:var(--card);border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid var(--accent)}
+.aula-card .data{font-size:12px;color:var(--muted)}.aula-card .disc{font-size:15px;font-weight:600;margin:4px 0}
+.aula-card .turma{font-size:12px;color:var(--muted)}.aula-card .hora{font-size:13px;font-weight:500}
+.aula-card .topico{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+.badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.badge-r{background:#166534;color:#86efac}.badge-p{background:#1e3a5f;color:#93c5fd}
+.badge-a{background:#713f12;color:#fde047}.badge-c{background:#7f1d1d;color:#fca5a5}
+.turma-sec{margin-bottom:16px}.turma-title{font-size:14px;font-weight:700;padding:12px 8px;display:flex;justify-content:space-between;align-items:center}
+.turma-title .hours{font-size:12px;color:var(--muted);font-weight:400}
+.filter-bar{padding:8px;display:flex;gap:8px;flex-wrap:wrap}
+.filter-bar select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:13px;flex:1}
+.detail-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;display:none;align-items:flex-end}
+.detail-overlay.show{display:flex}.detail-sheet{background:var(--card);width:100%;max-height:80vh;border-radius:16px 16px 0 0;padding:20px;overflow-y:auto}
+.detail-sheet h3{font-size:16px;margin-bottom:12px}.detail-row{margin-bottom:10px}
+.detail-row label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.detail-row p{font-size:14px;margin-top:2px}
+.generated{text-align:center;font-size:11px;color:var(--muted);padding:20px}
+</style></head><body>
+<div class="header">
+  <h1>PlanAula</h1>
+  <p>${config.nome_professor || ''}${config.instituicao ? ' · ' + config.instituicao : ''}</p>
+</div>
+<div class="nav">
+  <button class="active" onclick="showTab('calendario')">Calendário</button>
+  <button onclick="showTab('lista')">Aulas</button>
+  <button onclick="showTab('resumo')">Resumo</button>
+</div>
+<div id="calendario" class="tab active"></div>
+<div id="lista" class="tab"></div>
+<div id="resumo" class="tab"></div>
+<div class="detail-overlay" id="overlay" onclick="if(event.target===this)fecharDetalhe()">
+  <div class="detail-sheet" id="detail"></div>
+</div>
+<p class="generated">PlanAula · Gerado em ${new Date().toLocaleDateString('pt-PT')}</p>
+<script>
+const DADOS=${dadosJSON};
+const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const DIAS_S=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+let mesAtual,anoAtual;
+const hoje=new Date();const hojeStr=hoje.toISOString().slice(0,10);
+const datas=DADOS.aulas.map(a=>a.data).filter(Boolean).sort();
+if(datas.length){const d=new Date(datas[0]);mesAtual=d.getUTCMonth();anoAtual=d.getUTCFullYear()}
+else{mesAtual=hoje.getMonth();anoAtual=hoje.getFullYear()}
+
+const feriadosSet=new Set(DADOS.diasNaoLetivos.map(d=>d.data));
+const feriadosMap={};DADOS.diasNaoLetivos.forEach(d=>{feriadosMap[d.data]=d.descricao});
+function isDiaNaoLetivo(ds){
+  if(feriadosSet.has(ds))return true;
+  return DADOS.periodos.some(p=>ds>=p.data_inicio&&ds<=p.data_fim);
+}
+function getPeriodoDesc(ds){
+  const p=DADOS.periodos.find(p=>ds>=p.data_inicio&&ds<=p.data_fim);
+  return p?p.descricao:null;
+}
+
+function showTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav button').forEach(b=>{if(b.textContent.toLowerCase().includes(id==='calendario'?'calendário':id==='lista'?'aulas':'resumo'))b.classList.add('active')});
+}
+
+function renderCalendario(){
+  const el=document.getElementById('calendario');
+  const first=new Date(anoAtual,mesAtual,1);const dow=first.getDay();
+  const days=new Date(anoAtual,mesAtual+1,0).getDate();
+  const aulasDoMes=DADOS.aulas.filter(a=>{if(!a.data)return false;const d=new Date(a.data);return d.getUTCMonth()===mesAtual&&d.getUTCFullYear()===anoAtual});
+  let h='<div class="month-nav"><button onclick="mudarMes(-1)">‹</button><span>'+MESES[mesAtual]+' '+anoAtual+'</span><button onclick="mudarMes(1)">›</button></div>';
+  h+='<div class="cal-grid">';
+  DIAS_S.forEach(d=>{h+='<div class="cal-head">'+d+'</div>'});
+  for(let i=0;i<dow;i++)h+='<div class="cal-day empty"></div>';
+  for(let d=1;d<=days;d++){
+    const ds=anoAtual+'-'+String(mesAtual+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const isToday=ds===hojeStr;const isHoliday=isDiaNaoLetivo(ds);
+    const cls='cal-day'+(isToday?' today':'')+(isHoliday?' holiday':'');
+    h+='<div class="'+cls+'"><div class="cal-num">'+d+'</div>';
+    if(feriadosMap[ds])h+='<div class="cal-holiday">'+feriadosMap[ds]+'</div>';
+    else if(isHoliday){const pd=getPeriodoDesc(ds);if(pd)h+='<div class="cal-holiday">'+pd+'</div>'}
+    const aulasHoje=aulasDoMes.filter(a=>a.data===ds).sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
+    aulasHoje.forEach(a=>{h+='<div class="cal-ev" style="background:'+(a.turma_cor||'#3b82f6')+'" onclick="verDetalhe('+a.id+')">'+a.hora_inicio+' '+(a.disciplina_nome||'').substring(0,12)+'</div>'});
+    h+='</div>';
+  }
+  h+='</div>';el.innerHTML=h;
+}
+function mudarMes(d){mesAtual+=d;if(mesAtual>11){mesAtual=0;anoAtual++}if(mesAtual<0){mesAtual=11;anoAtual--}renderCalendario()}
+
+function renderLista(){
+  const el=document.getElementById('lista');
+  let h='<div class="filter-bar"><select id="fTurma" onchange="renderLista()"><option value="">Todas as turmas</option>';
+  const turmasComAulas=[...new Set(DADOS.aulas.map(a=>a.turma_id))];
+  turmasComAulas.forEach(tid=>{const t=DADOS.turmas.find(t=>t.id===tid);if(t)h+='<option value="'+tid+'">'+t.designacao+'</option>'});
+  h+='</select><select id="fEstado" onchange="renderLista()"><option value="">Todos</option><option value="r">Realizadas</option><option value="p">Planeadas</option></select></div>';
+  const fT=document.getElementById('fTurma')?.value||'';
+  const fE=document.getElementById('fEstado')?.value||'';
+  let aulas=DADOS.aulas.slice().sort((a,b)=>a.data.localeCompare(b.data)||a.hora_inicio.localeCompare(b.hora_inicio));
+  if(fT)aulas=aulas.filter(a=>String(a.turma_id)===fT);
+  if(fE==='r')aulas=aulas.filter(a=>a.estado!=='Adiada'&&a.estado!=='Cancelada'&&a.data<=hojeStr);
+  if(fE==='p')aulas=aulas.filter(a=>a.estado!=='Adiada'&&a.estado!=='Cancelada'&&a.data>hojeStr);
+  aulas.forEach(a=>{
+    const passou=a.data<=hojeStr;const override=a.estado==='Adiada'||a.estado==='Cancelada';
+    const estado=override?a.estado:passou?'Realizada':'Planeada';
+    const bc=estado==='Realizada'?'badge-r':estado==='Planeada'?'badge-p':estado==='Adiada'?'badge-a':'badge-c';
+    h+='<div class="aula-card" style="border-left-color:'+(a.turma_cor||'#3b82f6')+'" onclick="verDetalhe('+a.id+')">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center"><span class="data">'+formatData(a.data)+'</span><span class="badge '+bc+'">'+estado+'</span></div>';
+    h+='<div class="disc">'+(a.disciplina_nome||'')+'</div>';
+    h+='<div class="turma">'+(a.turma_nome||'')+' · <span class="hora">'+a.hora_inicio+'–'+a.hora_fim+'</span></div>';
+    if(a.topico)h+='<div class="topico">'+a.topico+'</div>';
+    h+='</div>'});
+  el.innerHTML=h;
+}
+
+function renderResumo(){
+  const el=document.getElementById('resumo');let h='';
+  const turmasComAulas=[...new Set(DADOS.aulas.map(a=>a.turma_id))];
+  turmasComAulas.forEach(tid=>{
+    const t=DADOS.turmas.find(t=>t.id===tid);if(!t)return;
+    const aulasT=DADOS.aulas.filter(a=>a.turma_id===tid);
+    const totalH=aulasT.reduce((s,a)=>{const[hi,mi]=a.hora_inicio.split(':').map(Number);const[hf,mf]=a.hora_fim.split(':').map(Number);return s+(hf*60+mf-hi*60-mi)/60},0);
+    const realizadas=aulasT.filter(a=>a.data<=hojeStr&&a.estado!=='Adiada'&&a.estado!=='Cancelada').length;
+    const pct=t.carga_horaria?Math.round(totalH/t.carga_horaria*100):0;
+    h+='<div class="turma-sec"><div class="turma-title" style="border-left:4px solid '+(t.cor||'#3b82f6')+';padding-left:12px">';
+    h+='<span>'+(t.designacao||'')+'<br><span style="font-size:12px;font-weight:400;color:var(--muted)">'+(aulasT[0]?.disciplina_nome||'')+'</span></span>';
+    h+='<span class="hours">'+totalH.toFixed(0)+'h / '+(t.carga_horaria||'?')+'h</span></div>';
+    h+='<div style="padding:0 12px 8px"><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden"><div style="background:'+(t.cor||'#3b82f6')+';height:100%;width:'+Math.min(pct,100)+'%"></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px"><span>'+realizadas+' realizadas / '+aulasT.length+' total</span><span>'+pct+'%</span></div></div></div>'});
+  el.innerHTML=h;
+}
+
+function verDetalhe(id){
+  const a=DADOS.aulas.find(x=>x.id===id);if(!a)return;
+  const passou=a.data<=hojeStr;const override=a.estado==='Adiada'||a.estado==='Cancelada';
+  const estado=override?a.estado:passou?'Realizada':'Planeada';
+  let h='<h3>'+(a.disciplina_nome||'Aula')+'</h3>';
+  h+=r('Data',formatData(a.data));h+=r('Horário',a.hora_inicio+'–'+a.hora_fim);
+  h+=r('Turma',a.turma_nome||'');h+=r('Estado',estado);
+  if(a.numero)h+=r('Aula nº',''+a.numero);if(a.modulo_nome)h+=r('Módulo',a.modulo_nome);
+  if(a.topico)h+=r('Tópico',a.topico);if(a.objetivos)h+=r('Objetivos',a.objetivos);
+  if(a.conteudos)h+=r('Conteúdos',a.conteudos);if(a.atividades)h+=r('Atividades',a.atividades);
+  if(a.recursos)h+=r('Recursos',a.recursos);if(a.avaliacao)h+=r('Avaliação',a.avaliacao);
+  if(a.notas)h+=r('Notas',a.notas);
+  h+='<button onclick="fecharDetalhe()" style="width:100%;padding:12px;margin-top:16px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">Fechar</button>';
+  document.getElementById('detail').innerHTML=h;document.getElementById('overlay').classList.add('show');
+}
+function fecharDetalhe(){document.getElementById('overlay').classList.remove('show')}
+function r(l,v){return '<div class="detail-row"><label>'+l+'</label><p>'+v+'</p></div>'}
+function formatData(ds){if(!ds)return'';const[y,m,d]=ds.split('-');return d+'/'+m+'/'+y+' ('+DIAS_S[new Date(ds).getUTCDay()]+')'}
+
+renderCalendario();renderLista();renderResumo();
+<\/script></body></html>`
+}
+
 async function imprimirPDF(html, defaultFileName) {
   const { filePath } = await dialog.showSaveDialog({
     title: 'Guardar PDF',
@@ -567,6 +744,29 @@ export function registerHandlers() {
   ipcMain.handle('export:calendarioHTML', async (_, { html, nome }) => {
     try { return await imprimirPDF(html, nome) }
     catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('export:mobileHTML', async () => {
+    try {
+      const aulas = models.listarAulas({})
+      const turmas = models.listarTurmas()
+      const config = models.obterTodasConfiguracoes()
+      const diasNaoLetivos = models.listarDiasNaoLetivos()
+      const periodos = getDb().prepare('SELECT * FROM periodos_nao_letivos').all()
+
+      const { filePath } = await dialog.showSaveDialog({
+        title: 'Exportar HTML Mobile',
+        defaultPath: `PlanAula-mobile.html`,
+        filters: [{ name: 'HTML', extensions: ['html'] }]
+      })
+      if (!filePath) return { success: false, cancelled: true }
+
+      const dados = JSON.stringify({ aulas, turmas, config, diasNaoLetivos, periodos })
+      const html = gerarHTMLMobile(dados, config)
+      fs.writeFileSync(filePath, html, 'utf-8')
+      shell.showItemInFolder(filePath)
+      return { success: true, path: filePath }
+    } catch (e) { return { success: false, error: e.message } }
   })
 
   ipcMain.handle('export:relatorioFinanceiro', async (_, { dados, tipo, ano, mes, config }) => {
