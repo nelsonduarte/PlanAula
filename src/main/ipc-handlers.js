@@ -302,6 +302,19 @@ body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:v
 .month-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
 .month-nav button{background:none;border:none;color:var(--accent);font-size:24px;padding:8px 16px;cursor:pointer}
 .month-nav span{font-size:16px;font-weight:600}
+.vista-toggle{display:flex;gap:0;padding:0 16px 8px;background:var(--card)}
+.vista-toggle button{flex:1;padding:6px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.vista-toggle button:first-child{border-radius:6px 0 0 6px}.vista-toggle button:last-child{border-radius:0 6px 6px 0}
+.vista-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.week-day{background:var(--card);border-radius:8px;margin-bottom:8px;overflow:hidden}
+.week-day-header{padding:10px 12px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.week-day-header.today{background:var(--accent);color:#fff}
+.week-day-header.holiday{background:#7f1d1d;color:#fca5a5}
+.week-ev{padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px}
+.week-ev:last-child{border-bottom:none}
+.week-ev .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.week-ev .info{flex:1;min-width:0}.week-ev .info .time{font-size:12px;font-weight:600}.week-ev .info .name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.week-empty{padding:12px;text-align:center;color:var(--muted);font-size:12px;font-style:italic}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;padding:4px;background:var(--bg)}
 .cal-head{text-align:center;font-size:11px;color:var(--muted);padding:8px 0;font-weight:600}
 .cal-day{background:var(--card);min-height:70px;padding:4px;border-radius:4px;position:relative}
@@ -348,11 +361,15 @@ body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:v
 const DADOS=${dadosJSON};
 const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const DIAS_S=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-let mesAtual,anoAtual;
+let mesAtual,anoAtual,vistaCal='mensal';
+let semanaAtual;
 const hoje=new Date();const hojeStr=hoje.toISOString().slice(0,10);
 const datas=DADOS.aulas.map(a=>a.data).filter(Boolean).sort();
 if(datas.length){const d=new Date(datas[0]);mesAtual=d.getUTCMonth();anoAtual=d.getUTCFullYear()}
 else{mesAtual=hoje.getMonth();anoAtual=hoje.getFullYear()}
+// Iniciar semana na segunda-feira da semana actual
+function getSegunda(d){const dt=new Date(d);const day=dt.getDay();const diff=dt.getDate()-day+(day===0?-6:1);dt.setDate(diff);return dt}
+semanaAtual=getSegunda(hoje);
 
 const feriadosSet=new Set(DADOS.diasNaoLetivos.map(d=>d.data));
 const feriadosMap={};DADOS.diasNaoLetivos.forEach(d=>{feriadosMap[d.data]=d.descricao});
@@ -373,11 +390,13 @@ function showTab(id){
 }
 
 function renderCalendario(){
+  if(vistaCal==='semanal')return renderSemanal();
   const el=document.getElementById('calendario');
   const first=new Date(anoAtual,mesAtual,1);const dow=first.getDay();
   const days=new Date(anoAtual,mesAtual+1,0).getDate();
   const aulasDoMes=DADOS.aulas.filter(a=>{if(!a.data)return false;const d=new Date(a.data);return d.getUTCMonth()===mesAtual&&d.getUTCFullYear()===anoAtual});
   let h='<div class="month-nav"><button onclick="mudarMes(-1)">‹</button><span>'+MESES[mesAtual]+' '+anoAtual+'</span><button onclick="mudarMes(1)">›</button></div>';
+  h+=vistaToggle();
   h+='<div class="cal-grid">';
   DIAS_S.forEach(d=>{h+='<div class="cal-head">'+d+'</div>'});
   for(let i=0;i<dow;i++)h+='<div class="cal-day empty"></div>';
@@ -394,7 +413,35 @@ function renderCalendario(){
   }
   h+='</div>';el.innerHTML=h;
 }
+function renderSemanal(){
+  const el=document.getElementById('calendario');
+  const seg=new Date(semanaAtual);
+  const dom=new Date(seg);dom.setDate(dom.getDate()+6);
+  const segStr=toDS(seg);const domStr=toDS(dom);
+  let h='<div class="month-nav"><button onclick="mudarSemana(-1)">‹</button><span>'+segStr.split('-')[2]+'/'+segStr.split('-')[1]+' — '+domStr.split('-')[2]+'/'+domStr.split('-')[1]+' '+dom.getFullYear()+'</span><button onclick="mudarSemana(1)">›</button></div>';
+  h+=vistaToggle();
+  for(let i=0;i<7;i++){
+    const dia=new Date(seg);dia.setDate(dia.getDate()+i);
+    const ds=toDS(dia);const isToday=ds===hojeStr;const isHoliday=isDiaNaoLetivo(ds);
+    const hdrCls='week-day-header'+(isToday?' today':'')+(isHoliday?' holiday':'');
+    const aulasHoje=DADOS.aulas.filter(a=>a.data===ds).sort((a,b)=>a.hora_inicio.localeCompare(b.hora_inicio));
+    h+='<div class="week-day"><div class="'+hdrCls+'"><span>'+DIAS_S[dia.getDay()]+', '+dia.getDate()+' '+MESES[dia.getMonth()]+'</span>';
+    if(feriadosMap[ds])h+='<span style="font-size:11px;font-weight:400">'+feriadosMap[ds]+'</span>';
+    else if(isHoliday){const pd=getPeriodoDesc(ds);if(pd)h+='<span style="font-size:11px;font-weight:400">'+pd+'</span>'}
+    h+='</div>';
+    if(aulasHoje.length===0){h+='<div class="week-empty">Sem aulas</div>'}
+    else{aulasHoje.forEach(a=>{
+      h+='<div class="week-ev" onclick="verDetalhe('+a.id+')"><div class="dot" style="background:'+(a.turma_cor||'#3b82f6')+'"></div><div class="info"><div class="time">'+a.hora_inicio+'–'+a.hora_fim+(a.sala?' · '+a.sala:'')+'</div><div class="name">'+(a.disciplina_nome||'')+' · '+(a.turma_nome||'')+'</div></div></div>';
+    })}
+    h+='</div>';
+  }
+  el.innerHTML=h;
+}
+function vistaToggle(){return '<div class="vista-toggle"><button class="'+(vistaCal==='mensal'?'active':'')+'" onclick="setVista(\\\'mensal\\\')">Mensal</button><button class="'+(vistaCal==='semanal'?'active':'')+'" onclick="setVista(\\\'semanal\\\')">Semanal</button></div>'}
+function setVista(v){vistaCal=v;renderCalendario()}
+function toDS(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function mudarMes(d){mesAtual+=d;if(mesAtual>11){mesAtual=0;anoAtual++}if(mesAtual<0){mesAtual=11;anoAtual--}renderCalendario()}
+function mudarSemana(d){semanaAtual.setDate(semanaAtual.getDate()+d*7);renderCalendario()}
 
 function renderLista(){
   const el=document.getElementById('lista');
@@ -443,7 +490,7 @@ function verDetalhe(id){
   const passou=a.data<=hojeStr;const override=a.estado==='Adiada'||a.estado==='Cancelada';
   const estado=override?a.estado:passou?'Realizada':'Planeada';
   let h='<h3>'+(a.disciplina_nome||'Aula')+'</h3>';
-  h+=r('Data',formatData(a.data));h+=r('Horário',a.hora_inicio+'–'+a.hora_fim);
+  h+=r('Data',formatData(a.data));h+=r('Horário',a.hora_inicio+'–'+a.hora_fim+(a.sala?' · Sala '+a.sala:''));
   h+=r('Turma',a.turma_nome||'');h+=r('Estado',estado);
   if(a.numero)h+=r('Aula nº',''+a.numero);if(a.modulo_nome)h+=r('Módulo',a.modulo_nome);
   if(a.topico)h+=r('Tópico',a.topico);if(a.objetivos)h+=r('Objetivos',a.objetivos);

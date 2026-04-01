@@ -353,6 +353,19 @@ export default function Calendario() {
             </svg>
             Imprimir
           </button>
+          <button
+            onClick={async () => {
+              const res = await window.api.exports.mobileHTML()
+              if (res?.success) alert('HTML mobile exportado com sucesso!')
+            }}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+            title="Exportar HTML para consulta no telemóvel"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Mobile
+          </button>
           <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             {['mensal', 'semanal', 'anual'].map(v => (
               <button
