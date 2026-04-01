@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
     gerarAutomatico: (turma_id, data_inicio, data_fim) =>
       invoke('aulas:gerarAutomatico', { turma_id, data_inicio, data_fim }),
     proximoNumero: (turma_id) => invoke('aulas:proximoNumero', turma_id),
+    eliminarDaTurma: (turma_id) => invoke('aulas:eliminarDaTurma', turma_id),
     eliminarDaDisciplina: (disciplina_id) => invoke('aulas:eliminarDaDisciplina', disciplina_id),
   },
 

@@ -440,6 +440,11 @@ export function registerHandlers() {
     catch (e) { return { success: false, error: e.message } }
   })
 
+  ipcMain.handle('aulas:eliminarDaTurma', async (_, turma_id) => {
+    try { return { success: true, data: models.eliminarAulasDaTurma(turma_id) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   ipcMain.handle('aulas:eliminarDaDisciplina', async (_, disciplina_id) => {
     try { return { success: true, data: models.eliminarAulasDaDisciplina(disciplina_id) } }
     catch (e) { return { success: false, error: e.message } }

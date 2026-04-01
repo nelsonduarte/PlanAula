@@ -331,7 +331,12 @@ export default function Aulas() {
             Limpar filtros
           </button>
           <span className="text-sm text-gray-500 dark:text-gray-400 self-center">
-            {aulas.length} aula(s) encontrada(s)
+            {aulas.length} aula(s) encontrada(s) — {aulas.reduce((sum, a) => {
+              if (!a.hora_inicio || !a.hora_fim) return sum
+              const [hi, mi] = a.hora_inicio.split(':').map(Number)
+              const [hf, mf] = a.hora_fim.split(':').map(Number)
+              return sum + (hf * 60 + mf - hi * 60 - mi) / 60
+            }, 0).toFixed(1)}h
           </span>
           {aulas.length > 0 && (
             <button

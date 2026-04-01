@@ -43,6 +43,7 @@ electron.contextBridge.exposeInMainWorld("api", {
     eliminar: (id) => invoke("aulas:eliminar", id),
     gerarAutomatico: (turma_id, data_inicio, data_fim) => invoke("aulas:gerarAutomatico", { turma_id, data_inicio, data_fim }),
     proximoNumero: (turma_id) => invoke("aulas:proximoNumero", turma_id),
+    eliminarDaTurma: (turma_id) => invoke("aulas:eliminarDaTurma", turma_id),
     eliminarDaDisciplina: (disciplina_id) => invoke("aulas:eliminarDaDisciplina", disciplina_id)
   },
   // Dias Não Lectivos
@@ -74,6 +75,7 @@ electron.contextBridge.exposeInMainWorld("api", {
   exports: {
     aulaPlano: (aula, config) => invoke("export:aulaPlano", { aula, config }),
     relatorioFinanceiro: (dados, tipo, ano, mes, config) => invoke("export:relatorioFinanceiro", { dados, tipo, ano, mes, config }),
+    calendarioHTML: (html, nome) => invoke("export:calendarioHTML", { html, nome }),
     relatorioTurma: (turma, horarios, aulas, config) => invoke("export:relatorioTurma", { turma, horarios, aulas, config })
   },
   backup: {
@@ -104,6 +106,13 @@ electron.contextBridge.exposeInMainWorld("api", {
     listar: (instituicao_id) => invoke("periodosNaoLetivos:listar", instituicao_id),
     criar: (dados) => invoke("periodosNaoLetivos:criar", dados),
     eliminar: (id) => invoke("periodosNaoLetivos:eliminar", id)
+  },
+  // Professor Cargos
+  professorCargos: {
+    listar: () => invoke("professorCargos:listar"),
+    criar: (dados) => invoke("professorCargos:criar", dados),
+    editar: (id, dados) => invoke("professorCargos:editar", { id, dados }),
+    eliminar: (id) => invoke("professorCargos:eliminar", id)
   },
   // Outros Rendimentos
   outrosRendimentos: {

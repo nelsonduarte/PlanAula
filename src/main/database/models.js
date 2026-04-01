@@ -233,8 +233,14 @@ export function listarAulas(filtros = {}) {
     params.push(filtros.data_fim)
   }
   if (filtros.estado) {
-    query += ' AND a.estado = ?'
-    params.push(filtros.estado)
+    if (filtros.estado === 'Realizada') {
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data <= date('now')"
+    } else if (filtros.estado === 'Planeada') {
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data > date('now')"
+    } else {
+      query += ' AND a.estado = ?'
+      params.push(filtros.estado)
+    }
   }
   if (filtros.mes) {
     query += " AND strftime('%Y-%m', a.data) = ?"
@@ -277,6 +283,12 @@ export function eliminarAula(id) {
   const db = getDb()
   db.prepare('DELETE FROM aulas WHERE id = ?').run(id)
   return { success: true }
+}
+
+export function eliminarAulasDaTurma(turma_id) {
+  const db = getDb()
+  const info = db.prepare('DELETE FROM aulas WHERE turma_id = ?').run(turma_id)
+  return { success: true, eliminadas: info.changes }
 }
 
 export function eliminarAulasDaDisciplina(disciplina_id) {

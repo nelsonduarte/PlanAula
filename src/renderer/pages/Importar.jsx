@@ -422,6 +422,26 @@ async function importarWorkbook(wb, setProgresso) {
   // ── Horários ──
   info('A importar Horários…')
   const rowsH = parseSheet(wb, 'Horários')
+
+  // Limpar horários existentes das turmas que vão ser importadas
+  const turmasComHorario = new Set()
+  for (const row of rowsH) {
+    const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
+    const discNome = norm(row, 'disciplina_nome')
+    if (!turmaDesig) continue
+    let turma
+    if (discNome) {
+      const disc = disciplinas.find(d => d.nome === discNome)
+      turma = turmas.find(t => t.designacao === turmaDesig && t.disciplina_id === disc?.id)
+    } else {
+      turma = turmas.find(t => t.designacao === turmaDesig)
+    }
+    if (turma && !turmasComHorario.has(turma.id)) {
+      turmasComHorario.add(turma.id)
+      await ipc(() => window.api.horarios.eliminarDaTurma(turma.id))
+    }
+  }
+
   for (const row of rowsH) {
     const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
     const discNome = norm(row, 'disciplina_nome')
@@ -443,6 +463,30 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
+      // verificar conflitos com outras turmas no mesmo slot (apenas turmas com períodos sobrepostos)
+      const turmaInicio = turma.data_inicio || ''
+      const turmaFim = turma.data_fim || ''
+      const todasTurmas = turmas.filter(t => {
+        if (t.id === turma.id) return false
+        // Ignorar turmas sem período ou com período que não se sobrepõe
+        if (!t.data_inicio || !t.data_fim || !turmaInicio || !turmaFim) return true
+        return t.data_inicio <= turmaFim && t.data_fim >= turmaInicio
+      })
+      let conflito = false
+      for (const outraTurma of todasTurmas) {
+        const outrosHorarios = await ipc(() => window.api.horarios.listar(outraTurma.id))
+        const overlap = outrosHorarios.find(h =>
+          h.dia_semana === diaSemana &&
+          h.hora_inicio < horaFim && h.hora_fim > horaInicio
+        )
+        if (overlap) {
+          err(`Horário "${turmaDesig}" dia ${diaSemana} ${horaInicio}-${horaFim} conflita com "${outraTurma.designacao}" ${overlap.hora_inicio}-${overlap.hora_fim}`)
+          conflito = true
+          break
+        }
+      }
+      if (conflito) continue
+
       // verificar se já existe horário com mesmo dia e hora de início
       const horariosExistentes = await ipc(() => window.api.horarios.listar(turma.id))
       const salaImport = norm(row, 'sala') || null
@@ -477,6 +521,21 @@ async function importarWorkbook(wb, setProgresso) {
   info('A gerar aulas automaticamente…')
   // Recarregar turmas actualizadas (com datas)
   turmas = await ipc(() => window.api.turmas.listar())
+
+  // Limpar aulas existentes antes de regenerar
+  for (const row of rowsT) {
+    const designacao = norm(row, 'designacao')
+    const discNome = norm(row, 'disciplina_nome')
+    if (!designacao) continue
+    const disc = disciplinas.find(d => d.nome === discNome)
+    const turma = turmas.find(t => t.designacao === designacao && (!disc || t.disciplina_id === disc.id))
+    if (!turma) continue
+    try {
+      const res = await ipc(() => window.api.aulas.eliminarDaTurma(turma.id))
+      if (res?.eliminadas > 0) info(`  Aulas anteriores eliminadas: ${designacao} — ${res.eliminadas} aulas`)
+    } catch (e) { err(`Limpar aulas "${designacao}": ${e.message}`) }
+  }
+
   let totalAulasGeradas = 0
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
@@ -493,7 +552,7 @@ async function importarWorkbook(wb, setProgresso) {
     }
     try {
       const aulasGeradas = await ipc(() => window.api.aulas.gerarAutomatico(turma.id, dataInicio, dataFim))
-      const n = Array.isArray(aulasGeradas) ? aulasGeradas.length : 0
+      const n = aulasGeradas?.aulas?.length ?? (Array.isArray(aulasGeradas) ? aulasGeradas.length : 0)
       totalAulasGeradas += n
       if (n > 0) ok(`Aulas geradas: ${designacao} (${discNome}) — ${n} aulas`)
       else ok(`Aulas já existentes: ${designacao} (${discNome}) — sem novas aulas`)

@@ -147,6 +147,9 @@ function runMigrations() {
   if (!colunas.includes("numero")) {
     db2.exec(`ALTER TABLE aulas ADD COLUMN numero INTEGER`);
   }
+  if (!colunas.includes("data_avaliacao")) {
+    db2.exec(`ALTER TABLE aulas ADD COLUMN data_avaliacao DATE`);
+  }
   const colunasDisciplinas = db2.prepare(`PRAGMA table_info(disciplinas)`).all().map((c) => c.name);
   if (!colunasDisciplinas.includes("curso_id")) {
     db2.exec(`ALTER TABLE disciplinas ADD COLUMN curso_id INTEGER REFERENCES cursos(id) ON DELETE SET NULL`);
@@ -194,6 +197,19 @@ function runMigrations() {
         data_inicio DATE NOT NULL,
         data_fim DATE NOT NULL,
         tipo TEXT NOT NULL DEFAULT 'férias',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  if (!tabelasExistentes.includes("professor_cargos")) {
+    db2.exec(`
+      CREATE TABLE professor_cargos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instituicao_id INTEGER REFERENCES instituicoes(id) ON DELETE SET NULL,
+        instituicao_nome TEXT NOT NULL,
+        departamento TEXT,
+        cargo TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -357,9 +373,9 @@ function criarAula(dados) {
   const numero = dados.numero != null ? dados.numero : proximoNumeroAula(dados.turma_id);
   const stmt = db2.prepare(`
     INSERT INTO aulas (turma_id, modulo_id, data, hora_inicio, hora_fim, topico,
-      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero)
+      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao)
     VALUES (@turma_id, @modulo_id, @data, @hora_inicio, @hora_fim, @topico,
-      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero)
+      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao)
   `);
   const result = stmt.run({ ...dados, numero });
   return { id: result.lastInsertRowid, ...dados, numero };
@@ -374,7 +390,12 @@ function listarAulas(filtros = {}) {
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
-    LEFT JOIN horarios h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
+    LEFT JOIN (
+      SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
+      FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+    ) h ON h.turma_id = a.turma_id
+          AND h.hora_inicio = a.hora_inicio
+          AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
     WHERE 1=1
   `;
   const params = [];
@@ -395,8 +416,14 @@ function listarAulas(filtros = {}) {
     params.push(filtros.data_fim);
   }
   if (filtros.estado) {
-    query += " AND a.estado = ?";
-    params.push(filtros.estado);
+    if (filtros.estado === "Realizada") {
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data <= date('now')";
+    } else if (filtros.estado === "Planeada") {
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data > date('now')";
+    } else {
+      query += " AND a.estado = ?";
+      params.push(filtros.estado);
+    }
   }
   if (filtros.mes) {
     query += " AND strftime('%Y-%m', a.data) = ?";
@@ -425,7 +452,7 @@ function editarAula(id, dados) {
       hora_inicio=@hora_inicio, hora_fim=@hora_fim, topico=@topico,
       objetivos=@objetivos, conteudos=@conteudos, atividades=@atividades,
       recursos=@recursos, avaliacao=@avaliacao, notas=@notas, estado=@estado,
-      numero=COALESCE(@numero, numero),
+      numero=COALESCE(@numero, numero), data_avaliacao=@data_avaliacao,
       updated_at=CURRENT_TIMESTAMP
     WHERE id=@id
   `).run({ ...dados, numero: dados.numero ?? null, id });
@@ -435,6 +462,11 @@ function eliminarAula(id) {
   const db2 = getDb();
   db2.prepare("DELETE FROM aulas WHERE id = ?").run(id);
   return { success: true };
+}
+function eliminarAulasDaTurma(turma_id) {
+  const db2 = getDb();
+  const info = db2.prepare("DELETE FROM aulas WHERE turma_id = ?").run(turma_id);
+  return { success: true, eliminadas: info.changes };
 }
 function eliminarAulasDaDisciplina(disciplina_id) {
   const db2 = getDb();
@@ -530,7 +562,8 @@ function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
           recursos: null,
           avaliacao: null,
           notas: null,
-          estado: "Planeada"
+          estado: "Planeada",
+          data_avaliacao: null
         });
         aulas.push(a);
         horas_geradas += duracaoReal;
@@ -607,6 +640,38 @@ function editarCurso(id, dados) {
 function eliminarCurso(id) {
   const db2 = getDb();
   db2.prepare("DELETE FROM cursos WHERE id = ?").run(id);
+  return { success: true };
+}
+function listarProfessorCargos() {
+  const db2 = getDb();
+  return db2.prepare(`
+    SELECT pc.*, i.nome as instituicao_nome_ref
+    FROM professor_cargos pc
+    LEFT JOIN instituicoes i ON i.id = pc.instituicao_id
+    ORDER BY pc.ativo DESC, pc.instituicao_nome
+  `).all();
+}
+function criarProfessorCargo(dados) {
+  const db2 = getDb();
+  const result = db2.prepare(`
+    INSERT INTO professor_cargos (instituicao_id, instituicao_nome, departamento, cargo, ativo)
+    VALUES (@instituicao_id, @instituicao_nome, @departamento, @cargo, @ativo)
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null, ativo: dados.ativo ?? 1 });
+  return { id: result.lastInsertRowid, ...dados };
+}
+function editarProfessorCargo(id, dados) {
+  const db2 = getDb();
+  db2.prepare(`
+    UPDATE professor_cargos
+    SET instituicao_id=@instituicao_id, instituicao_nome=@instituicao_nome,
+        departamento=@departamento, cargo=@cargo, ativo=@ativo
+    WHERE id=@id
+  `).run({ ...dados, instituicao_id: dados.instituicao_id || null, id });
+  return db2.prepare("SELECT * FROM professor_cargos WHERE id = ?").get(id);
+}
+function eliminarProfessorCargo(id) {
+  const db2 = getDb();
+  db2.prepare("DELETE FROM professor_cargos WHERE id = ?").run(id);
   return { success: true };
 }
 function listarDiasNaoLetivos(ano) {
@@ -906,6 +971,21 @@ function eliminarPeriodoNaoLetivo(id) {
   const db2 = getDb();
   db2.prepare("DELETE FROM periodos_nao_letivos WHERE id = ?").run(id);
   return { success: true };
+}
+function buscarAvaliacoesAmanha() {
+  const db2 = getDb();
+  const amanha = /* @__PURE__ */ new Date();
+  amanha.setDate(amanha.getDate() + 1);
+  const data = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, "0")}-${String(amanha.getDate()).padStart(2, "0")}`;
+  return db2.prepare(`
+    SELECT a.data_avaliacao, a.topico, a.hora_inicio, a.hora_fim,
+           t.designacao as turma_nome, d.nome as disciplina_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE a.data_avaliacao = ?
+    ORDER BY a.hora_inicio
+  `).all(data);
 }
 function pesquisarGlobal(query) {
   const db2 = getDb();
@@ -1470,6 +1550,13 @@ function registerHandlers() {
       return { success: false, error: e.message };
     }
   });
+  electron.ipcMain.handle("aulas:eliminarDaTurma", async (_, turma_id) => {
+    try {
+      return { success: true, data: eliminarAulasDaTurma(turma_id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   electron.ipcMain.handle("aulas:eliminarDaDisciplina", async (_, disciplina_id) => {
     try {
       return { success: true, data: eliminarAulasDaDisciplina(disciplina_id) };
@@ -1619,6 +1706,13 @@ function registerHandlers() {
       return { success: false, error: e.message };
     }
   });
+  electron.ipcMain.handle("export:calendarioHTML", async (_, { html, nome }) => {
+    try {
+      return await imprimirPDF(html, nome);
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   electron.ipcMain.handle("export:relatorioFinanceiro", async (_, { dados, tipo, ano, mes, config }) => {
     try {
       const html = gerarHTMLRelatorioFinanceiro(dados, tipo, ano, mes, config || {});
@@ -1680,6 +1774,34 @@ function registerHandlers() {
   electron.ipcMain.handle("cursos:eliminar", async (_, id) => {
     try {
       return { success: true, data: eliminarCurso(id) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("professorCargos:listar", async () => {
+    try {
+      return { success: true, data: listarProfessorCargos() };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("professorCargos:criar", async (_, dados) => {
+    try {
+      return { success: true, data: criarProfessorCargo(dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("professorCargos:editar", async (_, { id, dados }) => {
+    try {
+      return { success: true, data: editarProfessorCargo(id, dados) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  electron.ipcMain.handle("professorCargos:eliminar", async (_, id) => {
+    try {
+      return { success: true, data: eliminarProfessorCargo(id) };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -1783,6 +1905,18 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.maximize();
     mainWindow.show();
+    if (electron.Notification.isSupported()) {
+      try {
+        const avaliacoes = buscarAvaliacoesAmanha();
+        for (const a of avaliacoes) {
+          const titulo = `Avaliação amanhã — ${a.disciplina_nome}`;
+          const corpo = `${a.turma_nome}${a.topico ? ` · ${a.topico}` : ""}${a.hora_inicio ? ` · ${a.hora_inicio}` : ""}`;
+          new electron.Notification({ title: titulo, body: corpo }).show();
+        }
+      } catch (e) {
+        console.error("Erro ao verificar avaliações:", e);
+      }
+    }
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
