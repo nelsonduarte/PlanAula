@@ -92,6 +92,16 @@ export default function Estatisticas() {
   const mesesComDados = stats.evolucaoMensal.length || 1
   const mediaHorasMes = (totalHoras / mesesComDados).toFixed(1)
 
+  // Dados de rendimento mensal por instituição
+  const dadosRendimento = (stats.rendimentoMensal || []).map(m => {
+    const [, mesStr] = m.mes.split('-')
+    const entry = { mes: MESES_ABREV[parseInt(mesStr) - 1] || m.mes }
+    Object.entries(m.porInstituicao || {}).forEach(([inst, val]) => { entry[inst] = parseFloat(val.toFixed(2)) })
+    entry.total = parseFloat((m.total_liquido || 0).toFixed(2))
+    return entry
+  })
+  const instituicoesRendimento = [...new Set((stats.rendimentoMensal || []).flatMap(m => Object.keys(m.porInstituicao || {})))]
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -208,49 +218,26 @@ export default function Estatisticas() {
           )}
         </div>
 
-        {/* Detalhe por disciplina */}
-        {stats.porDisciplina.length > 0 && (
-          <div className="card">
-            <h2 className="section-title mb-4">Detalhe por Disciplina</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Disciplina</th>
-                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Aulas</th>
-                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Horas</th>
-                    <th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">% Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                  {stats.porDisciplina.map((d, i) => (
-                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      <td className="py-2.5 flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length] }} />
-                        <span className="font-medium text-gray-900 dark:text-white">{d.disciplina_nome}</span>
-                      </td>
-                      <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{d.total_aulas}</td>
-                      <td className="py-2.5 text-right text-gray-600 dark:text-gray-400">{(d.total_horas || 0).toFixed(1)}h</td>
-                      <td className="py-2.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{
-                              width: `${totalHoras > 0 ? (d.total_horas / totalHoras * 100) : 0}%`,
-                              backgroundColor: CORES_GRAFICO[i % CORES_GRAFICO.length]
-                            }} />
-                          </div>
-                          <span className="text-gray-600 dark:text-gray-400 w-9 text-right">
-                            {totalHoras > 0 ? ((d.total_horas / totalHoras) * 100).toFixed(0) : 0}%
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Rendimento por instituição */}
+        <div className="card">
+          <h2 className="section-title mb-4">Rendimento por Instituição</h2>
+          {dadosRendimento.length === 0 || dadosRendimento.every(d => d.total === 0) ? (
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados de rendimento</p></div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dadosRendimento} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v}€`} />
+                <Tooltip content={<CustomTooltip />} formatter={v => `${v.toFixed(2)}€`} />
+                <Legend />
+                {instituicoesRendimento.map((inst, i) => (
+                  <Bar key={inst} dataKey={inst} name={inst} stackId="a" fill={CORES_GRAFICO[i % CORES_GRAFICO.length]} radius={i === instituicoesRendimento.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
       {/* Progresso por turma */}

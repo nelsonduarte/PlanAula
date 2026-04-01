@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // Script de desenvolvimento: compila + atualiza o app.asar + lança o PlanAula.exe
-const { execSync, spawn } = require('child_process')
-const path = require('path')
-const fs = require('fs')
+import { execSync, spawn } from 'child_process'
+import path from 'path'
+import fs from 'fs'
+import { createRequire } from 'module'
+import { fileURLToPath } from 'url'
+
+const require = createRequire(import.meta.url)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const ROOT = path.join(__dirname, '..')
 const ASAR_PATH = path.join(ROOT, 'release/win-unpacked/resources/app.asar')
@@ -21,16 +26,12 @@ if (fs.existsSync(ASAR_PATH)) {
   console.log('\n📦 A atualizar o pacote...')
   try {
     const asar = require('@electron/asar')
-    // Criar asar temporário com os novos dist files
     const tmpDir = path.join(ROOT, '.tmp-app')
-    // Extrair asar atual para preservar node_modules
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true })
     asar.extractAll(ASAR_PATH, tmpDir)
-    // Substituir dist completamente (apagar o antigo primeiro)
     const tmpDist = path.join(tmpDir, 'dist')
     if (fs.existsSync(tmpDist)) fs.rmSync(tmpDist, { recursive: true })
     copyDir(path.join(ROOT, 'dist'), tmpDist)
-    // Reempacotar
     asar.createPackage(tmpDir, ASAR_PATH).then(() => {
       fs.rmSync(tmpDir, { recursive: true })
       console.log('✅ Pacote atualizado')

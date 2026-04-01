@@ -143,6 +143,11 @@ export function runMigrations() {
     db.exec(`ALTER TABLE horarios ADD COLUMN sala TEXT`)
   }
 
+  const colunasAulas = db.prepare(`PRAGMA table_info(aulas)`).all().map(c => c.name)
+  if (!colunasAulas.includes('sala')) {
+    db.exec(`ALTER TABLE aulas ADD COLUMN sala TEXT`)
+  }
+
   const colunasTurmas = db.prepare(`PRAGMA table_info(turmas)`).all().map(c => c.name)
   if (!colunasTurmas.includes('data_inicio')) {
     db.exec(`ALTER TABLE turmas ADD COLUMN data_inicio DATE`)

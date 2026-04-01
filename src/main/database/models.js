@@ -188,11 +188,11 @@ export function criarAula(dados) {
   const numero = dados.numero != null ? dados.numero : proximoNumeroAula(dados.turma_id)
   const stmt = db.prepare(`
     INSERT INTO aulas (turma_id, modulo_id, data, hora_inicio, hora_fim, topico,
-      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao)
+      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao, sala)
     VALUES (@turma_id, @modulo_id, @data, @hora_inicio, @hora_fim, @topico,
-      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao)
+      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao, @sala)
   `)
-  const result = stmt.run({ ...dados, numero })
+  const result = stmt.run({ sala: null, ...dados, numero })
   return { id: result.lastInsertRowid, ...dados, numero }
 }
 
@@ -201,7 +201,7 @@ export function listarAulas(filtros = {}) {
   let query = `
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
            d.nome as disciplina_nome, d.id as disciplina_id,
-           m.nome as modulo_nome, h.sala as sala
+           m.nome as modulo_nome, COALESCE(a.sala, h.sala) as sala
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
@@ -1036,8 +1036,28 @@ export function obterEstatisticas(ano_letivo) {
   const taxaConclusao = (realizadas + adiadas + canceladas) > 0
     ? (realizadas / (totalAulas) * 100).toFixed(1) : 0
 
+  // Rendimento mensal por instituição
+  const rendimentoMensal = []
+  for (let m = 1; m <= 12; m++) {
+    const fin = calcularFinanceiroMensal(parseInt(ano), m)
+    if (fin.total_bruto === 0 && fin.total_outros_bruto === 0) continue
+    const porInstituicao = {}
+    for (const item of fin.itens) {
+      // Buscar instituição via disciplina → curso → instituição
+      const disc = db.prepare('SELECT curso_id FROM disciplinas WHERE id = ?').get(item.disciplina_id)
+      let instNome = 'Sem instituição'
+      if (disc?.curso_id) {
+        const curso = db.prepare('SELECT i.nome FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id WHERE c.id = ?').get(disc.curso_id)
+        if (curso?.nome) instNome = curso.nome
+      }
+      porInstituicao[instNome] = (porInstituicao[instNome] || 0) + item.valor_bruto - item.valor_bruto * fin.taxa_irs
+    }
+    rendimentoMensal.push({ mes: fin.mes, porInstituicao, total_liquido: fin.total_liquido })
+  }
+
   return {
     porEstado, porDisciplina, evolucaoMensal, porTurma, porDiaSemana,
-    totalAulas, realizadas, adiadas, canceladas, totalHoras, taxaConclusao
+    totalAulas, realizadas, adiadas, canceladas, totalHoras, taxaConclusao,
+    rendimentoMensal
   }
 }

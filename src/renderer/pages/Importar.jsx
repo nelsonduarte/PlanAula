@@ -134,6 +134,90 @@ function gerarTemplate() {
   XLSX.writeFile(wb, 'PlanAula_Template.xlsx')
 }
 
+function gerarTemplateFormacao() {
+  const wb = XLSX.utils.book_new()
+
+  // ── Instruções ──
+  const instrucoes = [
+    ['PlanAula — Template de Formação Profissional'],
+    [''],
+    ['INSTRUÇÕES:'],
+    ['1. Preencha cada folha com os seus dados (não altere os cabeçalhos).'],
+    ['2. Campos marcados com * são obrigatórios.'],
+    ['3. Datas: aceita AAAA-MM-DD (2025-09-01), DD-MM-AAAA (01-09-2025) ou o formato de data do Excel.'],
+    ['4. Horas no formato HH:MM (ex: 09:00).'],
+    [''],
+    ['ORDEM DE IMPORTAÇÃO:'],
+    ['  Instituições  →  Cursos  →  UFCDs  →  Turmas  →  Sessões'],
+    [''],
+    ['  • Cursos  referenciam "instituicao_nome" de Instituições'],
+    ['  • UFCDs   referenciam "curso_nome" de Cursos'],
+    ['  • Turmas  referenciam "ufcd_nome" de UFCDs; campo "valor_hora" define a taxa horária'],
+    ['  • Sessões referenciam "turma_designacao" + "ufcd_nome" de Turmas'],
+    [''],
+    ['  SESSÕES (em vez de Horários):'],
+    ['  Cada linha da folha Sessões é uma aula concreta com data e hora.'],
+    ['  Preencha com base no cronograma recebido.'],
+    ['  Não há geração automática — as aulas são criadas exactamente como definidas.'],
+    [''],
+    ['Registos já existentes com o mesmo nome serão ignorados (sem duplicados).'],
+  ]
+  const wsInst = XLSX.utils.aoa_to_sheet(instrucoes)
+  wsInst['!cols'] = [{ wch: 80 }]
+  XLSX.utils.book_append_sheet(wb, wsInst, 'Instruções')
+
+  // ── Instituições ──
+  const wsI = XLSX.utils.aoa_to_sheet([
+    ['nome *', 'tipo', 'contacto', 'notas'],
+    ['IEFP - Centro de Formação de Santarém', 'formação', 'santarem@iefp.pt', ''],
+  ])
+  wsI['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 25 }, { wch: 30 }]
+  XLSX.utils.book_append_sheet(wb, wsI, 'Instituições')
+
+  // ── Cursos ──
+  const wsC = XLSX.utils.aoa_to_sheet([
+    ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'descricao'],
+    ['EFA - Técnico de Informática', 'IEFP - Centro de Formação de Santarém', 'formação', '2025/2026', ''],
+  ])
+  wsC['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
+  XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
+
+  // ── UFCDs ──
+  const wsU = XLSX.utils.aoa_to_sheet([
+    ['nome *', 'codigo', 'carga_horaria', 'descricao', 'curso_nome *'],
+    ['Estrutura de um programa', '0649', 25, '', 'EFA - Técnico de Informática'],
+    ['Introdução às bases de dados', '0650', 25, '', 'EFA - Técnico de Informática'],
+    ['Programação em C/C++', '0651', 50, '', 'EFA - Técnico de Informática'],
+  ])
+  wsU['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 14 }, { wch: 30 }, { wch: 30 }]
+  XLSX.utils.book_append_sheet(wb, wsU, 'UFCDs')
+
+  // ── Turmas ──
+  const wsT = XLSX.utils.aoa_to_sheet([
+    ['designacao *', 'ufcd_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'cor', 'valor_hora'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '2025/2026', 25, '2026-04-15', '2026-05-15', '#E74C3C', 18],
+    ['Turma EFA-T1', 'Introdução às bases de dados', '2025/2026', 25, '2026-05-16', '2026-06-15', '#3498DB', 18],
+    ['Turma EFA-T1', 'Programação em C/C++', '2025/2026', 50, '2026-06-16', '2026-08-15', '#2ECC71', 18],
+  ])
+  wsT['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 12 }]
+  XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
+
+  // ── Sessões ──
+  const wsS = XLSX.utils.aoa_to_sheet([
+    ['turma_designacao *', 'ufcd_nome *', 'data *', 'hora_inicio *', 'hora_fim *', 'sala'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '15-04-2026', '09:00', '13:00', 'Sala 3'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '16-04-2026', '14:00', '17:00', 'Sala 3'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '22-04-2026', '09:00', '13:00', 'Sala 3'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '23-04-2026', '14:00', '17:00', 'Sala 3'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '29-04-2026', '09:00', '13:00', 'Sala 3'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '30-04-2026', '14:00', '18:00', 'Sala 3'],
+  ])
+  wsS['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
+  XLSX.utils.book_append_sheet(wb, wsS, 'Sessões')
+
+  XLSX.writeFile(wb, 'PlanAula_Template_Formacao.xlsx')
+}
+
 // ─── Helper: sheet → JSON ─────────────────────────────────────────────────────
 
 function parseSheet(wb, name) {
@@ -330,6 +414,40 @@ async function importarWorkbook(wb, setProgresso) {
   }
   disciplinas = await ipc(() => window.api.disciplinas.listar())
 
+  // ── UFCDs (template formação — importadas como disciplinas) ──
+  const rowsUFCD = parseSheet(wb, 'UFCDs')
+  if (rowsUFCD.length > 0) {
+    info('A importar UFCDs…')
+    for (const row of rowsUFCD) {
+      const nome = norm(row, 'nome')
+      const cursoNome = norm(row, 'curso_nome')
+      if (!nome) continue
+      if (disciplinas.find(d => d.nome === nome && d.curso_nome === cursoNome)) {
+        ok(`UFCD já existe: ${nome}`)
+        continue
+      }
+      const curso = cursos.find(c => c.nome === cursoNome)
+      if (cursoNome && !curso) {
+        err(`UFCD "${nome}": curso "${cursoNome}" não encontrado`)
+        continue
+      }
+      try {
+        await ipc(() => window.api.disciplinas.criar({
+          nome,
+          codigo: norm(row, 'codigo') || null,
+          area_cientifica: null,
+          carga_horaria: normNum(row, 'carga_horaria') || normNum(row, 'horas', 0),
+          ects: null,
+          tipo: 'UFCD',
+          descricao: norm(row, 'descricao') || null,
+          curso_id: curso?.id || null,
+        }))
+        ok(`UFCD criada: ${nome}`)
+      } catch (e) { err(`UFCD "${nome}": ${e.message}`) }
+    }
+    disciplinas = await ipc(() => window.api.disciplinas.listar())
+  }
+
   // ── Módulos ──
   info('A importar Módulos…')
   const rowsMod = parseSheet(wb, 'Módulos')
@@ -365,7 +483,7 @@ async function importarWorkbook(wb, setProgresso) {
   let turmas = await ipc(() => window.api.turmas.listar())
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
-    const discNome = norm(row, 'disciplina_nome')
+    const discNome = norm(row, 'disciplina_nome') || norm(row, 'ufcd_nome')
     const anoLetivo = norm(row, 'ano_letivo') || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`
     if (!designacao) continue
     const disc = disciplinas.find(d => d.nome === discNome)
@@ -419,9 +537,71 @@ async function importarWorkbook(wb, setProgresso) {
   }
   turmas = await ipc(() => window.api.turmas.listar())
 
-  // ── Horários ──
+  // ── Detectar tipo de template: Sessões (formação) ou Horários (ensino) ──
+  const isFormacao = wb.Sheets['Sessões'] != null
+  const rowsH = isFormacao ? [] : parseSheet(wb, 'Horários')
+
+  if (isFormacao) {
+    // ── Sessões (formação profissional) ──
+    info('A importar Sessões…')
+    const rowsSessoes = parseSheet(wb, 'Sessões')
+
+    // Limpar aulas existentes das turmas que vão ser importadas
+    const turmasLimpas = new Set()
+    for (const row of rowsSessoes) {
+      const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
+      const discNome = norm(row, 'ufcd_nome') || norm(row, 'disciplina_nome')
+      if (!turmaDesig) continue
+      const disc = discNome ? disciplinas.find(d => d.nome === discNome) : null
+      const turma = disc
+        ? turmas.find(t => t.designacao === turmaDesig && t.disciplina_id === disc.id)
+        : turmas.find(t => t.designacao === turmaDesig)
+      if (turma && !turmasLimpas.has(turma.id)) {
+        turmasLimpas.add(turma.id)
+        const res = await ipc(() => window.api.aulas.eliminarDaTurma(turma.id))
+        if (res?.eliminadas > 0) info(`  Aulas anteriores eliminadas: ${turma.designacao} — ${res.eliminadas} aulas`)
+      }
+    }
+
+    let totalSessoes = 0
+    let totalHoras = 0
+    for (const row of rowsSessoes) {
+      const turmaDesig = norm(row, 'turma_designacao') || norm(row, 'turma_nome')
+      const discNome = norm(row, 'ufcd_nome') || norm(row, 'disciplina_nome')
+      const data = normDate(row, 'data')
+      const horaInicio = normTime(row, 'hora_inicio')
+      const horaFim = normTime(row, 'hora_fim', '13:00')
+      const sala = norm(row, 'sala') || null
+      if (!turmaDesig || !data) continue
+
+      const disc = discNome ? disciplinas.find(d => d.nome === discNome) : null
+      const turma = disc
+        ? turmas.find(t => t.designacao === turmaDesig && t.disciplina_id === disc.id)
+        : turmas.find(t => t.designacao === turmaDesig)
+
+      if (!turma) {
+        err(`Sessão: turma "${turmaDesig}"${discNome ? ` (${discNome})` : ''} não encontrada`)
+        continue
+      }
+      try {
+        await ipc(() => window.api.aulas.criar({
+          turma_id: turma.id, modulo_id: null, data, hora_inicio: horaInicio, hora_fim: horaFim,
+          topico: '', objetivos: null, conteudos: null, atividades: null, recursos: null,
+          avaliacao: null, notas: null, estado: 'Planeada', data_avaliacao: null, sala,
+        }))
+        totalSessoes++
+        const [hi, mi] = horaInicio.split(':').map(Number)
+        const [hf, mf] = horaFim.split(':').map(Number)
+        totalHoras += (hf * 60 + mf - hi * 60 - mi) / 60
+      } catch (e) { err(`Sessão "${turmaDesig}" ${data}: ${e.message}`) }
+    }
+    if (totalSessoes > 0) ok(`${totalSessoes} sessões criadas — ${totalHoras.toFixed(1)}h total`)
+
+    return { log, erros }
+  }
+
+  // ── Horários (ensino superior) ──
   info('A importar Horários…')
-  const rowsH = parseSheet(wb, 'Horários')
 
   // Limpar horários existentes das turmas que vão ser importadas
   const turmasComHorario = new Set()
@@ -525,7 +705,7 @@ async function importarWorkbook(wb, setProgresso) {
   // Limpar aulas existentes antes de regenerar
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
-    const discNome = norm(row, 'disciplina_nome')
+    const discNome = norm(row, 'disciplina_nome') || norm(row, 'ufcd_nome')
     if (!designacao) continue
     const disc = disciplinas.find(d => d.nome === discNome)
     const turma = turmas.find(t => t.designacao === designacao && (!disc || t.disciplina_id === disc.id))
@@ -539,7 +719,7 @@ async function importarWorkbook(wb, setProgresso) {
   let totalAulasGeradas = 0
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
-    const discNome = norm(row, 'disciplina_nome')
+    const discNome = norm(row, 'disciplina_nome') || norm(row, 'ufcd_nome')
     if (!designacao) continue
     const disc = disciplinas.find(d => d.nome === discNome)
     const turma = turmas.find(t => t.designacao === designacao && (!disc || t.disciplina_id === disc.id))
@@ -632,7 +812,16 @@ export default function Importar() {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
               <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Descarregar .xlsx
+            Ensino Superior
+          </button>
+          <button
+            onClick={gerarTemplateFormacao}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Formação
           </button>
         </div>
 
