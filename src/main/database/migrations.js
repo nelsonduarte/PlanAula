@@ -159,6 +159,24 @@ export function runMigrations() {
     db.exec(`ALTER TABLE turmas ADD COLUMN carga_horaria INTEGER NOT NULL DEFAULT 0`)
   }
 
+  // Permitir semestre NULL (para formação profissional)
+  const semestreInfo = db.prepare(`PRAGMA table_info(turmas)`).all().find(c => c.name === 'semestre')
+  if (semestreInfo && semestreInfo.notnull === 1) {
+    const turmasSql = db.prepare("SELECT sql FROM sqlite_master WHERE name='turmas'").get()?.sql
+    if (turmasSql) {
+      const newSql = turmasSql
+        .replace('semestre INTEGER NOT NULL DEFAULT 1', 'semestre INTEGER DEFAULT NULL')
+        .replace('ano_letivo TEXT NOT NULL', 'ano_letivo TEXT')
+        .replace('CREATE TABLE turmas', 'CREATE TABLE turmas_new')
+      db.exec('PRAGMA foreign_keys=OFF;')
+      db.exec(newSql)
+      db.exec('INSERT INTO turmas_new SELECT * FROM turmas;')
+      db.exec('DROP TABLE turmas;')
+      db.exec('ALTER TABLE turmas_new RENAME TO turmas;')
+      db.exec('PRAGMA foreign_keys=ON;')
+    }
+  }
+
   // Insert default configurations if not present
   const stmt = db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)`)
   stmt.run('tema', 'light')

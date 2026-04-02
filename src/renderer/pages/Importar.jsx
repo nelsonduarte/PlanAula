@@ -177,7 +177,7 @@ function gerarTemplateFormacao() {
   // ── Cursos ──
   const wsC = XLSX.utils.aoa_to_sheet([
     ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'descricao'],
-    ['EFA - Técnico de Informática', 'IEFP - Centro de Formação de Santarém', 'formação', '2025/2026', ''],
+    ['EFA - Técnico de Informática', 'IEFP - Centro de Formação de Santarém', 'formação', '2026', ''],
   ])
   wsC['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
   XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
@@ -194,10 +194,10 @@ function gerarTemplateFormacao() {
 
   // ── Turmas ──
   const wsT = XLSX.utils.aoa_to_sheet([
-    ['designacao *', 'ufcd_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'cor', 'valor_hora'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '2025/2026', 25, '2026-04-15', '2026-05-15', '#E74C3C', 18],
-    ['Turma EFA-T1', 'Introdução às bases de dados', '2025/2026', 25, '2026-05-16', '2026-06-15', '#3498DB', 18],
-    ['Turma EFA-T1', 'Programação em C/C++', '2025/2026', 50, '2026-06-16', '2026-08-15', '#2ECC71', 18],
+    ['designacao *', 'ufcd_nome *', 'ano *', 'carga_horaria', 'data_inicio', 'data_fim', 'cor', 'valor_hora'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '2026', 25, '2026-04-15', '2026-05-15', '#E74C3C', 18],
+    ['Turma EFA-T1', 'Introdução às bases de dados', '2026', 25, '2026-05-16', '2026-06-15', '#3498DB', 18],
+    ['Turma EFA-T1', 'Programação em C/C++', '2026', 50, '2026-06-16', '2026-08-15', '#2ECC71', 18],
   ])
   wsT['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 12 }]
   XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
@@ -422,19 +422,19 @@ async function importarWorkbook(wb, setProgresso) {
       const nome = norm(row, 'nome')
       const cursoNome = norm(row, 'curso_nome')
       if (!nome) continue
-      if (disciplinas.find(d => d.nome === nome && d.curso_nome === cursoNome)) {
-        ok(`UFCD já existe: ${nome}`)
-        continue
-      }
       const curso = cursos.find(c => c.nome === cursoNome)
       if (cursoNome && !curso) {
         err(`UFCD "${nome}": curso "${cursoNome}" não encontrado`)
         continue
       }
+      if (disciplinas.find(d => d.nome === nome && d.curso_id === (curso?.id || null))) {
+        ok(`UFCD já existe: ${nome}`)
+        continue
+      }
       try {
         await ipc(() => window.api.disciplinas.criar({
           nome,
-          codigo: norm(row, 'codigo') || null,
+          codigo: null,
           area_cientifica: null,
           carga_horaria: normNum(row, 'carga_horaria') || normNum(row, 'horas', 0),
           ects: null,
@@ -484,7 +484,7 @@ async function importarWorkbook(wb, setProgresso) {
   for (const row of rowsT) {
     const designacao = norm(row, 'designacao')
     const discNome = norm(row, 'disciplina_nome') || norm(row, 'ufcd_nome')
-    const anoLetivo = norm(row, 'ano_letivo') || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`
+    const anoLetivo = norm(row, 'ano_letivo') || norm(row, 'ano') || `${new Date().getFullYear()}`
     if (!designacao) continue
     const disc = disciplinas.find(d => d.nome === discNome)
     if (!disc) {
@@ -516,7 +516,7 @@ async function importarWorkbook(wb, setProgresso) {
         designacao,
         disciplina_id: disc.id,
         ano_letivo: anoLetivo,
-        semestre: normNum(row, 'semestre', 1),
+        semestre: norm(row, 'semestre') ? normNum(row, 'semestre', null) : null,
         sala: null,
         data_inicio: normDate(row, 'data_inicio') || null,
         data_fim: normDate(row, 'data_fim') || null,

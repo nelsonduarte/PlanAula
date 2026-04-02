@@ -88,7 +88,7 @@ export function criarTurma(dados) {
     INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor, data_inicio, data_fim, carga_horaria)
     VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor, @data_inicio, @data_fim, @carga_horaria)
   `)
-  const result = stmt.run(dados)
+  const result = stmt.run({ semestre: null, ...dados })
   return { id: result.lastInsertRowid, ...dados }
 }
 
@@ -131,6 +131,9 @@ export function editarTurma(id, dados) {
 
 export function eliminarTurma(id) {
   const db = getDb()
+  db.prepare('DELETE FROM aulas WHERE turma_id = ?').run(id)
+  db.prepare('DELETE FROM horarios WHERE turma_id = ?').run(id)
+  db.prepare('DELETE FROM valores_hora WHERE turma_id = ?').run(id)
   db.prepare('DELETE FROM turmas WHERE id = ?').run(id)
   return { success: true }
 }
@@ -1002,6 +1005,7 @@ export function obterEstatisticas(ano_letivo) {
   const porTurma = db.prepare(`
     SELECT t.designacao as turma_nome,
            d.nome as disciplina_nome,
+           COALESCE(i.nome, 'Sem instituição') as instituicao_nome,
            t.carga_horaria,
            COUNT(a.id) as total_aulas,
            COALESCE(SUM(CASE WHEN a.estado != 'Cancelada' AND a.data <= date('now')
@@ -1010,6 +1014,8 @@ export function obterEstatisticas(ano_letivo) {
              THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_total
     FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     LEFT JOIN aulas a ON a.turma_id = t.id AND strftime('%Y', a.data) = ?
     GROUP BY t.id
     HAVING horas_total > 0

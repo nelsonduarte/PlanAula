@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  LineChart, Line, ResponsiveContainer
+  LineChart, Line, ResponsiveContainer, Area, AreaChart
 } from 'recharts'
 import { useDatabase } from '../hooks/useDatabase.js'
 
@@ -10,7 +10,6 @@ const CORES_GRAFICO = [
   '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#14B8A6'
 ]
 
-const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
 function CustomTooltip({ active, payload, label }) {
@@ -27,11 +26,12 @@ function CustomTooltip({ active, payload, label }) {
   return null
 }
 
-function KpiCard({ value, label, color }) {
+function KpiCard({ value, label, color, sub }) {
   return (
     <div className="card text-center">
       <p className={`text-3xl font-bold ${color}`}>{value}</p>
       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+      {sub && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -64,43 +64,56 @@ export default function Estatisticas() {
 
   if (!stats) return null
 
-  // Dados para gráficos
-  const dadosPorEstado = stats.porEstado.map(e => ({ name: e.estado, value: e.total }))
-
-  const dadosPorDisciplina = stats.porDisciplina.map((d, i) => ({
-    name: d.disciplina_nome.length > 18 ? d.disciplina_nome.substring(0, 18) + '…' : d.disciplina_nome,
-    horas: parseFloat((d.total_horas || 0).toFixed(1)),
-    aulas: d.total_aulas,
-    fill: CORES_GRAFICO[i % CORES_GRAFICO.length]
-  }))
-
-  const dadosEvolucao = stats.evolucaoMensal.map(m => {
-    const [, mesStr] = m.mes.split('-')
-    return {
-      mes: MESES_ABREV[parseInt(mesStr) - 1] || m.mes,
-      aulas: m.total_aulas,
-      horas: parseFloat((m.total_horas || 0).toFixed(1))
-    }
-  })
-
-  const dadosDiaSemana = DIAS_SEMANA.map((nome, i) => {
-    const found = stats.porDiaSemana.find(d => d.dia === i)
-    return { dia: nome, aulas: found?.total_aulas || 0, horas: parseFloat((found?.total_horas || 0).toFixed(1)) }
-  }).filter((_, i) => i >= 1 && i <= 5) // apenas Seg-Sex
-
   const totalHoras = stats.totalHoras || 0
   const mesesComDados = stats.evolucaoMensal.length || 1
   const mediaHorasMes = (totalHoras / mesesComDados).toFixed(1)
 
-  // Dados de rendimento mensal por instituição
-  const dadosRendimento = (stats.rendimentoMensal || []).map(m => {
+  // Rendimento total e mensal
+  const rendimentoMensal = stats.rendimentoMensal || []
+  const rendimentoTotal = rendimentoMensal.reduce((s, m) => s + (m.total_liquido || 0), 0)
+  const mediaRendMes = mesesComDados > 0 ? (rendimentoTotal / mesesComDados).toFixed(2) : '0.00'
+
+  // Evolução mensal com rendimento
+  const dadosEvolucao = stats.evolucaoMensal.map(m => {
+    const [, mesStr] = m.mes.split('-')
+    const mesIdx = parseInt(mesStr) - 1
+    const rend = rendimentoMensal.find(r => r.mes === m.mes)
+    return {
+      mes: MESES_ABREV[mesIdx] || m.mes,
+      horas: parseFloat((m.total_horas || 0).toFixed(1)),
+      rendimento: parseFloat((rend?.total_liquido || 0).toFixed(2))
+    }
+  })
+
+  // Rendimento por instituição (barras empilhadas)
+  const dadosRendimento = rendimentoMensal.map(m => {
     const [, mesStr] = m.mes.split('-')
     const entry = { mes: MESES_ABREV[parseInt(mesStr) - 1] || m.mes }
     Object.entries(m.porInstituicao || {}).forEach(([inst, val]) => { entry[inst] = parseFloat(val.toFixed(2)) })
     entry.total = parseFloat((m.total_liquido || 0).toFixed(2))
     return entry
   })
-  const instituicoesRendimento = [...new Set((stats.rendimentoMensal || []).flatMap(m => Object.keys(m.porInstituicao || {})))]
+  const instituicoesRendimento = [...new Set(rendimentoMensal.flatMap(m => Object.keys(m.porInstituicao || {})))]
+
+  // Horas por instituição (pie)
+  const horasPorInst = {}
+  rendimentoMensal.forEach(m => {
+    Object.entries(m.porInstituicao || {}).forEach(([inst]) => {
+      if (!horasPorInst[inst]) horasPorInst[inst] = 0
+    })
+  })
+  // Calcular horas por instituição a partir das turmas
+  if (stats.porTurma) {
+    stats.porTurma.forEach(t => {
+      const inst = t.instituicao_nome || 'Sem instituição'
+      horasPorInst[inst] = (horasPorInst[inst] || 0) + (t.horas_total || 0)
+    })
+  }
+  const dadosHorasInst = Object.entries(horasPorInst)
+    .filter(([, h]) => h > 0)
+    .map(([name, value], i) => ({ name, value: parseFloat(value.toFixed(1)), fill: CORES_GRAFICO[i % CORES_GRAFICO.length] }))
+
+  const formatCurrency = v => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v)
 
   return (
     <div className="space-y-6">
@@ -117,114 +130,51 @@ export default function Estatisticas() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard value={stats.totalAulas} label="Total de Aulas" color="text-blue-600 dark:text-blue-400" />
-        <KpiCard value={`${totalHoras.toFixed(1)}h`} label="Total de Horas" color="text-indigo-600 dark:text-indigo-400" />
-        <KpiCard value={stats.realizadas} label="Realizadas" color="text-green-600 dark:text-green-400" />
-        <KpiCard value={`${stats.taxaConclusao}%`} label="Taxa de Realização" color="text-purple-600 dark:text-purple-400" />
+        <KpiCard value={`${totalHoras.toFixed(0)}h`} label="Total de Horas" color="text-blue-600 dark:text-blue-400" sub={`${stats.totalAulas} aulas`} />
+        <KpiCard value={formatCurrency(rendimentoTotal)} label="Rendimento Líquido" color="text-green-600 dark:text-green-400" sub={`${stats.taxaConclusao}% realizado`} />
+        <KpiCard value={`${mediaHorasMes}h`} label="Média Mensal" color="text-indigo-600 dark:text-indigo-400" sub={`${formatCurrency(parseFloat(mediaRendMes))}/mês`} />
+        <KpiCard value={stats.porTurma.length} label="Turmas Activas" color="text-purple-600 dark:text-purple-400" sub={`${instituicoesRendimento.length} instituições`} />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard value={stats.adiadas} label="Adiadas" color="text-yellow-600 dark:text-yellow-400" />
-        <KpiCard value={stats.canceladas} label="Canceladas" color="text-red-600 dark:text-red-400" />
-        <KpiCard value={`${mediaHorasMes}h`} label="Média Mensal" color="text-cyan-600 dark:text-cyan-400" />
-        <KpiCard value={stats.porTurma.length} label="Turmas com Aulas" color="text-teal-600 dark:text-teal-400" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pie — estado */}
-        <div className="card">
-          <h2 className="section-title mb-4">Aulas por Estado</h2>
-          {dadosPorEstado.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={dadosPorEstado} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
-                  paddingAngle={3} dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
-                  {dadosPorEstado.map((entry, i) => (
-                    <Cell key={i} fill={
-                      entry.name === 'Realizada' ? '#22C55E' :
-                      entry.name === 'Planeada'  ? '#3B82F6' :
-                      entry.name === 'Adiada'    ? '#F59E0B' : '#EF4444'
-                    } />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Bar — horas por disciplina */}
-        <div className="card">
-          <h2 className="section-title mb-4">Horas por Disciplina</h2>
-          {dadosPorDisciplina.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={dadosPorDisciplina} layout="vertical" margin={{ left: 10, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="horas" name="Horas" radius={[0, 4, 4, 0]}>
-                  {dadosPorDisciplina.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Evolução mensal */}
+      {/* Evolução mensal — horas + rendimento */}
       <div className="card">
         <h2 className="section-title mb-4">Evolução Mensal {anoSelecionado}</h2>
         {dadosEvolucao.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados de evolução mensal</p></div>
+          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={dadosEvolucao} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+            <AreaChart data={dadosEvolucao} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <defs>
+                <linearGradient id="gradHoras" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradRend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22C55E" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
+              <YAxis yAxisId="horas" tick={{ fontSize: 12 }} />
+              <YAxis yAxisId="rend" orientation="right" tick={{ fontSize: 12 }} tickFormatter={v => `${v}€`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line type="monotone" dataKey="horas" name="Horas" stroke="#3B82F6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-              <Line type="monotone" dataKey="aulas" name="Aulas" stroke="#22C55E" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-            </LineChart>
+              <Area yAxisId="horas" type="monotone" dataKey="horas" name="Horas" stroke="#3B82F6" strokeWidth={2} fill="url(#gradHoras)" dot={{ r: 4 }} />
+              <Area yAxisId="rend" type="monotone" dataKey="rendimento" name="Rendimento (€)" stroke="#22C55E" strokeWidth={2} fill="url(#gradRend)" dot={{ r: 4 }} />
+            </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Distribuição por dia da semana */}
-        <div className="card">
-          <h2 className="section-title mb-4">Aulas Realizadas por Dia da Semana</h2>
-          {dadosDiaSemana.every(d => d.aulas === 0) ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={dadosDiaSemana} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="dia" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Bar dataKey="aulas" name="Aulas" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="horas" name="Horas" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
         {/* Rendimento por instituição */}
         <div className="card">
           <h2 className="section-title mb-4">Rendimento por Instituição</h2>
           {dadosRendimento.length === 0 || dadosRendimento.every(d => d.total === 0) ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados de rendimento</p></div>
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={240}>
               <BarChart data={dadosRendimento} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
@@ -238,52 +188,30 @@ export default function Estatisticas() {
             </ResponsiveContainer>
           )}
         </div>
+
+        {/* Horas por instituição */}
+        <div className="card">
+          <h2 className="section-title mb-4">Horas por Instituição</h2>
+          {dadosHorasInst.length === 0 ? (
+            <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500"><p className="text-sm">Sem dados</p></div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie data={dadosHorasInst} cx="50%" cy="50%" innerRadius={55} outerRadius={95}
+                  paddingAngle={3} dataKey="value" label={false}>
+                  {dadosHorasInst.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} formatter={v => `${v}h`} />
+                <Legend formatter={(value, entry) => {
+                  const item = dadosHorasInst.find(d => d.name === value)
+                  return `${value} · ${item?.value || 0}h`
+                }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
-      {/* Progresso por turma */}
-      {stats.porTurma.length > 0 && (
-        <div className="card">
-          <h2 className="section-title mb-4">Progresso por Turma</h2>
-          <div className="space-y-3">
-            {stats.porTurma.map((t, i) => {
-              const progresso = t.carga_horaria > 0 ? Math.min(100, (t.horas_dadas / t.carga_horaria) * 100) : null
-              return (
-                <div key={i}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{t.turma_nome}</span>
-                      <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">{t.disciplina_nome}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 flex gap-3">
-                      <span>{t.horas_dadas.toFixed(1)}h dadas{t.carga_horaria > 0 ? ` / ${t.carga_horaria}h` : ''}</span>
-                      <span className="text-gray-400">·</span>
-                      <span>{t.total_aulas} aulas</span>
-                    </div>
-                  </div>
-                  {progresso !== null ? (
-                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${progresso}%`,
-                          backgroundColor: progresso >= 100 ? '#22C55E' : progresso >= 50 ? '#3B82F6' : '#F59E0B'
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-blue-400" style={{ width: '100%', opacity: 0.3 }} />
-                    </div>
-                  )}
-                  {progresso !== null && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 text-right">{progresso.toFixed(0)}%</p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
