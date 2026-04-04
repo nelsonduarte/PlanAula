@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 // IPC handlers retornam { success, data } — este helper extrai data ou lança erro
 async function ipc(fn) {
@@ -13,8 +13,25 @@ async function ipc(fn) {
 
 // ─── Template Download ────────────────────────────────────────────────────────
 
+// Helper: adicionar sheet a partir de array-of-arrays
+function addSheet(wb, name, data, colWidths) {
+  const ws = wb.addWorksheet(name)
+  data.forEach(row => ws.addRow(row))
+  if (colWidths) colWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w })
+  return ws
+}
+
+async function saveWorkbook(wb, filename) {
+  const buf = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 function gerarTemplate() {
-  const wb = XLSX.utils.book_new()
+  const wb = new ExcelJS.Workbook()
 
   // ── Instruções ──
   const instrucoes = [
@@ -47,95 +64,61 @@ function gerarTemplate() {
     [''],
     ['Registos já existentes com o mesmo nome serão ignorados (sem duplicados).'],
   ]
-  const wsInst = XLSX.utils.aoa_to_sheet(instrucoes)
-  wsInst['!cols'] = [{ wch: 80 }]
-  XLSX.utils.book_append_sheet(wb, wsInst, 'Instruções')
-
-  // ── Configurações ──
-  const wsCfg = XLSX.utils.aoa_to_sheet([
+  addSheet(wb, 'Instruções', instrucoes, [80])
+  addSheet(wb, 'Configurações', [
     ['nome_professor', 'instituicao', 'departamento', 'ano_letivo_atual'],
     ['Prof. João Silva', 'Universidade do Porto', 'Departamento de Informática', '2025/2026'],
-  ])
-  wsCfg['!cols'] = [{ wch: 25 }, { wch: 35 }, { wch: 35 }, { wch: 14 }]
-  XLSX.utils.book_append_sheet(wb, wsCfg, 'Configurações')
-
-  // ── Instituições ──
-  const wsI = XLSX.utils.aoa_to_sheet([
+  ], [25, 35, 35, 14])
+  addSheet(wb, 'Instituições', [
     ['nome *', 'tipo', 'contacto', 'notas'],
     ['Universidade do Porto', 'universitária', 'geral@up.pt', ''],
     ['Instituto Politécnico de Coimbra', 'politécnica', 'geral@ipc.pt', ''],
-  ])
-  wsI['!cols'] = [{ wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, wsI, 'Instituições')
-
-  // ── Períodos Não Letivos ──
-  const wsPNL = XLSX.utils.aoa_to_sheet([
+  ], [35, 15, 25, 30])
+  addSheet(wb, 'Períodos Não Letivos', [
     ['descricao *', 'data_inicio *', 'data_fim *', 'tipo', 'instituicao_nome'],
     ['Natal', '2025-12-22', '2026-01-05', 'férias', ''],
     ['Carnaval', '2026-02-16', '2026-02-18', 'férias', ''],
     ['Páscoa', '2026-04-02', '2026-04-13', 'férias', ''],
     ['Verão', '2026-07-01', '2026-09-14', 'férias', 'Universidade do Porto'],
-  ])
-  wsPNL['!cols'] = [{ wch: 25 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 35 }]
-  XLSX.utils.book_append_sheet(wb, wsPNL, 'Períodos Não Letivos')
-
-  // ── Cursos ──
-  const wsC = XLSX.utils.aoa_to_sheet([
+  ], [25, 13, 13, 12, 35])
+  addSheet(wb, 'Cursos', [
     ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'descricao'],
     ['Engenharia Informática', 'Universidade do Porto', 'semestral', '2025/2026', ''],
     ['Gestão e Administração', 'Instituto Politécnico de Coimbra', 'semestral', '2025/2026', ''],
-  ])
-  wsC['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
-
-  // ── Disciplinas ──
-  const wsD = XLSX.utils.aoa_to_sheet([
+  ], [30, 35, 12, 12, 30])
+  addSheet(wb, 'Disciplinas', [
     ['nome *', 'codigo', 'tipo', 'area_cientifica', 'ects', 'descricao', 'curso_nome *'],
     ['Programação Web', 'PW101', 'Teórica', 'Informática', 6, '', 'Engenharia Informática'],
     ['Bases de Dados', 'BD102', 'Teórico-Prática', 'Informática', 4, '', 'Engenharia Informática'],
     ['Gestão de Projetos', 'GP201', 'Seminário', 'Gestão', 3, '', 'Gestão e Administração'],
-  ])
-  wsD['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 6 }, { wch: 20 }, { wch: 28 }]
-  XLSX.utils.book_append_sheet(wb, wsD, 'Disciplinas')
-
-  // ── Módulos ──
-  const wsMod = XLSX.utils.aoa_to_sheet([
+  ], [25, 10, 18, 18, 6, 20, 28])
+  addSheet(wb, 'Módulos', [
     ['disciplina_nome *', 'nome *', 'ordem', 'horas', 'objetivos'],
     ['Programação Web', 'HTML e CSS', 1, 10, 'Construir páginas web estáticas'],
     ['Programação Web', 'JavaScript', 2, 20, 'Programação client-side'],
     ['Programação Web', 'Frameworks', 3, 30, 'React e Vue.js'],
     ['Bases de Dados', 'Modelo Relacional', 1, 15, 'Modelação de dados'],
     ['Bases de Dados', 'SQL', 2, 20, 'Consultas e manipulação de dados'],
-  ])
-  wsMod['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 40 }]
-  XLSX.utils.book_append_sheet(wb, wsMod, 'Módulos')
-
-  // ── Turmas ──
-  const wsT = XLSX.utils.aoa_to_sheet([
+  ], [25, 25, 8, 8, 40])
+  addSheet(wb, 'Turmas', [
     ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre', 'cor', 'valor_hora'],
     ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1, '#2E86C1', 30],
     ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2, '#27AE60', 30],
     ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1, '#8E44AD', 25],
-  ])
-  wsT['!cols'] = [{ wch: 18 }, { wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 12 }]
-  XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
-
-  // ── Horários ──
-  const wsH = XLSX.utils.aoa_to_sheet([
+  ], [18, 25, 12, 14, 13, 13, 10, 10, 12])
+  addSheet(wb, 'Horários', [
     ['turma_designacao *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *', 'sala'],
     ['Turma A', 'Programação Web', 2, '09:00', '11:00', 'Sala 101'],
     ['Turma A', 'Programação Web', 4, '14:00', '16:00', 'Sala 101'],
     ['Turma B', 'Programação Web', 3, '10:00', '12:00', 'Sala 203'],
     ['Turma A', 'Bases de Dados', 5, '09:00', '11:00', 'Sala 205'],
-  ])
-  wsH['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
-  XLSX.utils.book_append_sheet(wb, wsH, 'Horários')
+  ], [20, 25, 14, 13, 13, 15])
 
-  XLSX.writeFile(wb, 'PlanAula_Template.xlsx')
+  saveWorkbook(wb, 'PlanAula_Template.xlsx')
 }
 
 function gerarTemplateFormacao() {
-  const wb = XLSX.utils.book_new()
+  const wb = new ExcelJS.Workbook()
 
   // ── Instruções ──
   const instrucoes = [
@@ -162,48 +145,29 @@ function gerarTemplateFormacao() {
     [''],
     ['Registos já existentes com o mesmo nome serão ignorados (sem duplicados).'],
   ]
-  const wsInst = XLSX.utils.aoa_to_sheet(instrucoes)
-  wsInst['!cols'] = [{ wch: 80 }]
-  XLSX.utils.book_append_sheet(wb, wsInst, 'Instruções')
+  addSheet(wb, 'Instruções', instrucoes, [80])
 
-  // ── Instituições ──
-  const wsI = XLSX.utils.aoa_to_sheet([
+  addSheet(wb, 'Instituições', [
     ['nome *', 'tipo', 'contacto', 'notas'],
     ['IEFP - Centro de Formação de Santarém', 'formação', 'santarem@iefp.pt', ''],
-  ])
-  wsI['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 25 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, wsI, 'Instituições')
-
-  // ── Cursos ──
-  const wsC = XLSX.utils.aoa_to_sheet([
+  ], [40, 15, 25, 30])
+  addSheet(wb, 'Cursos', [
     ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'descricao'],
     ['EFA - Técnico de Informática', 'IEFP - Centro de Formação de Santarém', 'formação', '2026', ''],
-  ])
-  wsC['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, wsC, 'Cursos')
-
-  // ── UFCDs ──
-  const wsU = XLSX.utils.aoa_to_sheet([
+  ], [30, 40, 12, 12, 30])
+  addSheet(wb, 'UFCDs', [
     ['nome *', 'codigo', 'carga_horaria', 'descricao', 'curso_nome *'],
     ['Estrutura de um programa', '0649', 25, '', 'EFA - Técnico de Informática'],
     ['Introdução às bases de dados', '0650', 25, '', 'EFA - Técnico de Informática'],
     ['Programação em C/C++', '0651', 50, '', 'EFA - Técnico de Informática'],
-  ])
-  wsU['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 14 }, { wch: 30 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, wsU, 'UFCDs')
-
-  // ── Turmas ──
-  const wsT = XLSX.utils.aoa_to_sheet([
+  ], [30, 10, 14, 30, 30])
+  addSheet(wb, 'Turmas', [
     ['designacao *', 'ufcd_nome *', 'ano *', 'carga_horaria', 'data_inicio', 'data_fim', 'cor', 'valor_hora'],
     ['Turma EFA-T1', 'Estrutura de um programa', '2026', 25, '2026-04-15', '2026-05-15', '#E74C3C', 18],
     ['Turma EFA-T1', 'Introdução às bases de dados', '2026', 25, '2026-05-16', '2026-06-15', '#3498DB', 18],
     ['Turma EFA-T1', 'Programação em C/C++', '2026', 50, '2026-06-16', '2026-08-15', '#2ECC71', 18],
-  ])
-  wsT['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 12 }]
-  XLSX.utils.book_append_sheet(wb, wsT, 'Turmas')
-
-  // ── Sessões ──
-  const wsS = XLSX.utils.aoa_to_sheet([
+  ], [18, 30, 12, 14, 13, 13, 10, 12])
+  addSheet(wb, 'Sessões', [
     ['turma_designacao *', 'ufcd_nome *', 'data *', 'hora_inicio *', 'hora_fim *', 'sala'],
     ['Turma EFA-T1', 'Estrutura de um programa', '15-04-2026', '09:00', '13:00', 'Sala 3'],
     ['Turma EFA-T1', 'Estrutura de um programa', '16-04-2026', '14:00', '17:00', 'Sala 3'],
@@ -211,19 +175,37 @@ function gerarTemplateFormacao() {
     ['Turma EFA-T1', 'Estrutura de um programa', '23-04-2026', '14:00', '17:00', 'Sala 3'],
     ['Turma EFA-T1', 'Estrutura de um programa', '29-04-2026', '09:00', '13:00', 'Sala 3'],
     ['Turma EFA-T1', 'Estrutura de um programa', '30-04-2026', '14:00', '18:00', 'Sala 3'],
-  ])
-  wsS['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
-  XLSX.utils.book_append_sheet(wb, wsS, 'Sessões')
+  ], [20, 30, 13, 13, 13, 15])
 
-  XLSX.writeFile(wb, 'PlanAula_Template_Formacao.xlsx')
+  saveWorkbook(wb, 'PlanAula_Template_Formacao.xlsx')
 }
 
 // ─── Helper: sheet → JSON ─────────────────────────────────────────────────────
 
 function parseSheet(wb, name) {
-  const ws = wb.Sheets[name]
-  if (!ws) return []
-  return XLSX.utils.sheet_to_json(ws, { defval: '' })
+  const ws = wb.getWorksheet(name)
+  if (!ws || ws.rowCount === 0) return []
+  const headers = []
+  const rows = []
+  ws.eachRow((row, rowNum) => {
+    const vals = row.values // ExcelJS rows are 1-indexed, values[0] is undefined
+    if (rowNum === 1) {
+      for (let i = 1; i < vals.length; i++) headers.push(vals[i] != null ? String(vals[i]).trim() : '')
+    } else {
+      const obj = {}
+      for (let i = 0; i < headers.length; i++) {
+        let v = vals[i + 1]
+        if (v instanceof Date) {
+          // Convert Date to YYYY-MM-DD string
+          const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, '0'), d = String(v.getDate()).padStart(2, '0')
+          v = `${y}-${m}-${d}`
+        }
+        obj[headers[i]] = v != null ? v : ''
+      }
+      rows.push(obj)
+    }
+  })
+  return rows
 }
 
 // Normalise header keys: remove " *" suffix, trim
@@ -538,7 +520,7 @@ async function importarWorkbook(wb, setProgresso) {
   turmas = await ipc(() => window.api.turmas.listar())
 
   // ── Detectar tipo de template: Sessões (formação) ou Horários (ensino) ──
-  const isFormacao = wb.Sheets['Sessões'] != null
+  const isFormacao = wb.getWorksheet('Sessões') != null
   const rowsH = isFormacao ? [] : parseSheet(wb, 'Horários')
 
   if (isFormacao) {
@@ -767,7 +749,8 @@ export default function Importar() {
 
     try {
       const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf)
+      const wb = new ExcelJS.Workbook()
+      await wb.xlsx.load(buf)
       const res = await importarWorkbook(wb, setProgresso)
       setResultado(res)
     } catch (err) {

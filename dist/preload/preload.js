@@ -4,6 +4,10 @@ function invoke(channel, ...args) {
   return electron.ipcRenderer.invoke(channel, ...args);
 }
 electron.contextBridge.exposeInMainWorld("api", {
+  // Dashboard
+  dashboard: {
+    stats: () => invoke("dashboard:stats")
+  },
   // Disciplinas
   disciplinas: {
     listar: () => invoke("disciplinas:listar"),
@@ -17,7 +21,8 @@ electron.contextBridge.exposeInMainWorld("api", {
     listar: (disciplina_id) => invoke("modulos:listar", disciplina_id),
     criar: (dados) => invoke("modulos:criar", dados),
     editar: (id, dados) => invoke("modulos:editar", { id, dados }),
-    eliminar: (id) => invoke("modulos:eliminar", id)
+    eliminar: (id) => invoke("modulos:eliminar", id),
+    sincronizarUFCD: (disciplina_id) => invoke("modulos:sincronizarUFCD", disciplina_id)
   },
   // Turmas
   turmas: {
@@ -76,7 +81,11 @@ electron.contextBridge.exposeInMainWorld("api", {
     aulaPlano: (aula, config) => invoke("export:aulaPlano", { aula, config }),
     relatorioFinanceiro: (dados, tipo, ano, mes, config) => invoke("export:relatorioFinanceiro", { dados, tipo, ano, mes, config }),
     calendarioHTML: (html, nome) => invoke("export:calendarioHTML", { html, nome }),
-    relatorioTurma: (turma, horarios, aulas, config) => invoke("export:relatorioTurma", { turma, horarios, aulas, config })
+    mobileHTML: () => invoke("export:mobileHTML"),
+    ics: () => invoke("export:ics"),
+    relatorioTurma: (turma, horarios, aulas, config) => invoke("export:relatorioTurma", { turma, horarios, aulas, config }),
+    turmaPlanos: (turma_id) => invoke("export:turmaPlanos", { turma_id }),
+    folhaHoras: (ano, mes) => invoke("export:folhaHoras", { ano, mes })
   },
   backup: {
     exportar: () => invoke("backup:exportar"),
