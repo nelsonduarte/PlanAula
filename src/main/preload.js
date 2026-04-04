@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
     criar: (dados) => invoke('modulos:criar', dados),
     editar: (id, dados) => invoke('modulos:editar', { id, dados }),
     eliminar: (id) => invoke('modulos:eliminar', id),
+    sincronizarUFCD: (disciplina_id) => invoke('modulos:sincronizarUFCD', disciplina_id),
   },
 
   // Turmas
@@ -96,6 +97,7 @@ contextBridge.exposeInMainWorld('api', {
     mobileHTML: () => invoke('export:mobileHTML'),
     relatorioTurma: (turma, horarios, aulas, config) =>
       invoke('export:relatorioTurma', { turma, horarios, aulas, config }),
+    turmaPlanos: (turma_id) => invoke('export:turmaPlanos', { turma_id }),
   },
 
   backup: {

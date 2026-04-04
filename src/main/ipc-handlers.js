@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import fs from 'fs'
 import * as models from './database/models.js'
 import { getDb, closeDb } from './database/db.js'
+import { gerarHTMLPlanos } from './exporters/plano-aula-template.js'
 
 const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -587,6 +588,11 @@ export function registerHandlers() {
     catch (e) { return { success: false, error: e.message } }
   })
 
+  ipcMain.handle('modulos:sincronizarUFCD', async (_, disciplina_id) => {
+    try { return { success: true, data: models.sincronizarModulosUFCD(disciplina_id) } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   // ─── Turmas ───────────────────────────────────────────────────────────────
   ipcMain.handle('turmas:listar', async (_, disciplina_id) => {
     try { return { success: true, data: models.listarTurmas(disciplina_id) } }
@@ -788,8 +794,30 @@ export function registerHandlers() {
 
   ipcMain.handle('export:aulaPlano', async (_, { aula, config }) => {
     try {
+      // Tentar usar o template melhorado com contexto
+      const contexto = models.obterContextoExportTurma(aula.turma_id)
+      if (contexto) {
+        const aulaCtx = contexto.aulas.find(a => a.id === aula.id)
+        if (aulaCtx) {
+          const html = gerarHTMLPlanos({ ...contexto, aulas: [aulaCtx] }, config || {})
+          const nomeFicheiro = `plano-${(aula.disciplina_nome || 'aula').replace(/\s+/g, '-')}-${aula.data || 'sem-data'}.pdf`
+          return await imprimirPDF(html, nomeFicheiro)
+        }
+      }
+      // Fallback para template antigo
       const html = gerarHTMLPlanoAula(aula, config || {})
       const nomeFicheiro = `plano-${(aula.disciplina_nome || 'aula').replace(/\s+/g, '-')}-${aula.data || 'sem-data'}.pdf`
+      return await imprimirPDF(html, nomeFicheiro)
+    } catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('export:turmaPlanos', async (_, { turma_id }) => {
+    try {
+      const contexto = models.obterContextoExportTurma(turma_id)
+      if (!contexto || contexto.aulas.length === 0) return { success: false, error: 'Sem aulas para exportar' }
+      const config = models.obterTodasConfiguracoes()
+      const html = gerarHTMLPlanos(contexto, config)
+      const nomeFicheiro = `planos-${contexto.turma.designacao}-${(contexto.turma.disciplina_nome || '').replace(/\s+/g, '-')}.pdf`
       return await imprimirPDF(html, nomeFicheiro)
     } catch (e) { return { success: false, error: e.message } }
   })

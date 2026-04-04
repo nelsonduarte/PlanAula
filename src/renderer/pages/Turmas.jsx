@@ -230,6 +230,7 @@ export default function Turmas() {
                     <div className="flex items-center gap-2">
                       <button onClick={() => abrirHorarios(turma)} className="flex-1 btn-secondary text-xs py-1.5" onMouseEnter={() => carregarHorarios(turma.id)}>🕐 Horários</button>
                       <button onClick={() => exportarRelatorio(turma)} className="btn-secondary text-xs py-1.5 px-3" title="Exportar relatório PDF">📄</button>
+                      <button onClick={() => window.api.exports.turmaPlanos(turma.id)} className="btn-secondary text-xs py-1.5 px-3" title="Exportar todos os planos de aula">📋</button>
                       <button onClick={() => abrirEditar(turma)} className="btn-secondary text-xs py-1.5 px-3">✏️</button>
                       <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
                     </div>

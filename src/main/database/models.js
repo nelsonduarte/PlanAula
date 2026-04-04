@@ -80,6 +80,32 @@ export function eliminarModulo(id) {
   return { success: true }
 }
 
+export function sincronizarModulosUFCD(disciplina_id) {
+  const db = getDb()
+  const disc = db.prepare('SELECT * FROM disciplinas WHERE id = ?').get(disciplina_id)
+  if (!disc || disc.tipo !== 'UFCD') return { sincronizadas: 0 }
+
+  // Encontrar todas as disciplinas UFCD com o mesmo nome
+  const irmãs = db.prepare('SELECT id FROM disciplinas WHERE nome = ? AND tipo = ? AND id != ?')
+    .all(disc.nome, 'UFCD', disciplina_id)
+
+  if (irmãs.length === 0) return { sincronizadas: 0 }
+
+  const modulosOrigem = db.prepare('SELECT * FROM modulos WHERE disciplina_id = ? ORDER BY ordem').all(disciplina_id)
+
+  let sincronizadas = 0
+  for (const irma of irmãs) {
+    // Limpar módulos existentes da irmã e copiar os da origem
+    db.prepare('DELETE FROM modulos WHERE disciplina_id = ?').run(irma.id)
+    for (const mod of modulosOrigem) {
+      db.prepare('INSERT INTO modulos (disciplina_id, nome, ordem, horas, objetivos) VALUES (?, ?, ?, ?, ?)')
+        .run(irma.id, mod.nome, mod.ordem, mod.horas, mod.objetivos)
+    }
+    sincronizadas++
+  }
+  return { sincronizadas }
+}
+
 // ─── Turmas ──────────────────────────────────────────────────────────────────
 
 export function criarTurma(dados) {
@@ -1065,6 +1091,58 @@ export function obterEstatisticas(ano_letivo) {
     porEstado, porDisciplina, evolucaoMensal, porTurma, porDiaSemana,
     totalAulas, realizadas, adiadas, canceladas, totalHoras, taxaConclusao,
     rendimentoMensal
+  }
+}
+
+// ─── Exportação ───────────────────────────────────────────────────────────────
+
+export function obterContextoExportTurma(turma_id) {
+  const db = getDb()
+  const duracaoMin = `(
+    CAST(substr(a.hora_fim,1,2) AS INTEGER)*60 + CAST(substr(a.hora_fim,4,2) AS INTEGER) -
+    CAST(substr(a.hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(a.hora_inicio,4,2) AS INTEGER)
+  )`
+
+  const turma = db.prepare(`
+    SELECT t.*, d.nome as disciplina_nome, d.codigo as disciplina_codigo, d.tipo as disciplina_tipo,
+           d.carga_horaria as disciplina_carga, c.nome as curso_nome,
+           COALESCE(i.nome, '') as instituicao_nome, COALESCE(i.tipo, '') as instituicao_tipo
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    WHERE t.id = ?
+  `).get(turma_id)
+  if (!turma) return null
+
+  const aulas = db.prepare(`
+    SELECT a.*, COALESCE(a.sala, h.sala) as sala, m.nome as modulo_nome
+    FROM aulas a
+    LEFT JOIN modulos m ON m.id = a.modulo_id
+    LEFT JOIN (
+      SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
+      FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+    ) h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
+         AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
+    WHERE a.turma_id = ? AND a.estado != 'Cancelada'
+    ORDER BY a.data, a.hora_inicio
+  `).all(turma_id)
+
+  // Calcular horas acumuladas por aula
+  let horasAcumuladas = 0
+  const aulasComContexto = aulas.map((a, idx) => {
+    const hi = a.hora_inicio.split(':').map(Number)
+    const hf = a.hora_fim.split(':').map(Number)
+    const duracao = (hf[0] * 60 + hf[1] - hi[0] * 60 - hi[1]) / 60
+    horasAcumuladas += duracao
+    return { ...a, duracao, horasAcumuladas: parseFloat(horasAcumuladas.toFixed(1)), sequencia: idx + 1, totalAulas: aulas.length }
+  })
+
+  return {
+    turma,
+    aulas: aulasComContexto,
+    isFormacao: turma.disciplina_tipo === 'UFCD',
+    totalHoras: parseFloat(horasAcumuladas.toFixed(1))
   }
 }
 

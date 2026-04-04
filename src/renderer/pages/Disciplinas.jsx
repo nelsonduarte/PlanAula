@@ -169,59 +169,60 @@ export default function Disciplinas() {
           <p className="text-gray-500 dark:text-gray-400 font-medium">Sem disciplinas</p>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Clique em "Nova Disciplina" para começar</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtradas.map(disc => {
-            const progresso = calcularProgresso(disc)
-            return (
-              <div key={disc.id} className="card hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">{disc.nome}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {disc.codigo && <span className="font-mono">{disc.codigo} · </span>}
-                      {disc.area_cientifica || 'Sem área'}
-                    </p>
-                  </div>
-                  <span className={`badge ${disc.tipo === 'UC' ? 'badge-blue' : disc.tipo === 'UFCD' ? 'badge-green' : 'badge-yellow'} ml-2 flex-shrink-0`}>
-                    {disc.tipo || 'UC'}
-                  </span>
-                </div>
+      ) : (() => {
+        // Agrupar: UFCDs por nome, UCs por curso
+        const ufcds = filtradas.filter(d => d.tipo === 'UFCD')
+        const ucs = filtradas.filter(d => d.tipo !== 'UFCD')
 
-                <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  <span>⏱️ {disc.carga_horaria}h</span>
-                  {disc.ects && <span>📖 {disc.ects} ECTS</span>}
-                </div>
-                {disc.curso_nome && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2 truncate">
-                    🎓 {disc.curso_nome}{disc.instituicao_nome ? ` · ${disc.instituicao_nome}` : ''}
+        const ufcdGroups = {}
+        ufcds.forEach(d => {
+          if (!ufcdGroups[d.nome]) ufcdGroups[d.nome] = []
+          ufcdGroups[d.nome].push(d)
+        })
+
+        const ucGroups = {}
+        ucs.forEach(d => {
+          const key = d.curso_nome || 'Sem curso'
+          if (!ucGroups[key]) ucGroups[key] = { instituicao: d.instituicao_nome, discs: [] }
+          ucGroups[key].discs.push(d)
+        })
+
+        const renderCard = (disc) => {
+          const progresso = calcularProgresso(disc)
+          return (
+            <div key={disc.id} className="card hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 dark:text-white truncate">{disc.nome}</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {disc.codigo && <span className="font-mono">{disc.codigo} · </span>}
+                    {disc.area_cientifica || disc.curso_nome || ''}
                   </p>
-                )}
-
-                {/* Progress bar */}
-                <div className="mb-4">
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    <span>Programa concluído</span>
-                    <span>{progresso.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 rounded-full transition-all"
-                      style={{ width: `${progresso}%` }}
-                    />
-                  </div>
                 </div>
+                <span className={`badge ${disc.tipo === 'UC' ? 'badge-blue' : disc.tipo === 'UFCD' ? 'badge-green' : 'badge-yellow'} ml-2 flex-shrink-0`}>
+                  {disc.tipo || 'UC'}
+                </span>
+              </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => abrirModulos(disc)}
-                    className="flex-1 btn-secondary text-xs py-1.5"
-                  >
-                    📋 Módulos
-                  </button>
-                  <button
-                    onClick={() => abrirEditar(disc)}
-                    className="btn-secondary text-xs py-1.5 px-3"
+              <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-2">
+                <span>⏱️ {disc.carga_horaria}h</span>
+                {disc.ects > 0 && <span>📖 {disc.ects} ECTS</span>}
+              </div>
+
+              {/* Progress bar */}
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                  <span>Programa concluído</span>
+                  <span>{progresso.toFixed(0)}%</span>
+                </div>
+                <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${progresso}%` }} />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button onClick={() => abrirModulos(disc)} className="flex-1 btn-secondary text-xs py-1.5">📋 Módulos</button>
+                <button onClick={() => abrirEditar(disc)} className="btn-secondary text-xs py-1.5 px-3"
                   >
                     ✏️
                   </button>
@@ -241,9 +242,44 @@ export default function Disciplinas() {
                 </div>
               </div>
             )
-          })}
-        </div>
-      )}
+          }
+
+        return (
+          <div className="space-y-6">
+            {/* UFCDs agrupadas por nome */}
+            {Object.keys(ufcdGroups).length > 0 && Object.entries(ufcdGroups).map(([nome, discs]) => (
+              <div key={nome}>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="section-title">{nome}</h2>
+                  <span className="badge badge-green text-xs">UFCD</span>
+                  {discs.length > 1 && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {discs.map(d => d.curso_nome).filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {discs.map(d => renderCard(d))}
+                </div>
+              </div>
+            ))}
+
+            {/* UCs agrupadas por curso */}
+            {Object.entries(ucGroups).map(([cursoNome, grupo]) => (
+              <div key={cursoNome}>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="section-title">{cursoNome}</h2>
+                  <span className="badge badge-blue text-xs">UC</span>
+                  {grupo.instituicao && <span className="text-xs text-gray-400 dark:text-gray-500">{grupo.instituicao}</span>}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {grupo.discs.map(d => renderCard(d))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Modal criar/editar disciplina */}
       <Modal
@@ -451,6 +487,23 @@ export default function Disciplinas() {
                 ))
               )}
             </div>
+
+            {/* Sincronizar UFCDs */}
+            {disciplinaSelecionada?.tipo === 'UFCD' && (modulos[disciplinaSelecionada?.id] || []).length > 0 && (
+              <button
+                onClick={async () => {
+                  const res = await window.api.modulos.sincronizarUFCD(disciplinaSelecionada.id)
+                  if (res?.success && res.data?.sincronizadas > 0) {
+                    alert(`Módulos sincronizados com ${res.data.sincronizadas} UFCD(s) com o mesmo nome.`)
+                  } else {
+                    alert('Sem outras UFCDs com o mesmo nome para sincronizar.')
+                  }
+                }}
+                className="btn-secondary text-sm w-full"
+              >
+                🔄 Sincronizar módulos com UFCDs do mesmo nome
+              </button>
+            )}
           </div>
         )}
       </Modal>
