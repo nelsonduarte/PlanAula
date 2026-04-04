@@ -154,12 +154,12 @@ export default function Turmas() {
 
   // Group by discipline
   const turmasFiltradas = turmas.filter(t =>
-    !filtroDisc || String(t.disciplina_id) === String(filtroDisc)
+    !filtroDisc || t.designacao === filtroDisc
   )
 
   const porDisciplina = turmasFiltradas.reduce((acc, t) => {
-    const key = t.disciplina_id
-    if (!acc[key]) acc[key] = { nome: t.disciplina_nome, turmas: [] }
+    const key = t.designacao
+    if (!acc[key]) acc[key] = { nome: t.designacao, turmas: [] }
     acc[key].turmas.push(t)
     return acc
   }, {})
@@ -183,9 +183,9 @@ export default function Turmas() {
           onChange={e => setFiltroDisc(e.target.value)}
           className="input-field max-w-xs"
         >
-          <option value="">Todas as disciplinas</option>
-          {disciplinas.map(d => (
-            <option key={d.id} value={d.id}>{d.nome}</option>
+          <option value="">Todas as turmas</option>
+          {[...new Set(turmas.map(t => t.designacao))].sort().map(d => (
+            <option key={d} value={d}>{d}</option>
           ))}
         </select>
       </div>
@@ -199,55 +199,36 @@ export default function Turmas() {
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(porDisciplina).map(([discId, grupo]) => (
-            <div key={discId}>
+          {/* Turmas agrupadas (formação com várias UFCDs) */}
+          {Object.entries(porDisciplina).filter(([, g]) => g.turmas.length > 1).map(([key, grupo]) => (
+            <div key={key}>
               <h2 className="section-title mb-3">{grupo.nome}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {grupo.turmas.map(turma => (
                   <div key={turma.id} className="card hover:shadow-md transition-shadow">
                     <div className="flex items-start gap-3 mb-3">
-                      <div
-                        className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm"
-                        style={{ backgroundColor: turma.cor }}
-                      >
+                      <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: turma.cor }}>
                         {turma.designacao.substring(0, 2).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 dark:text-white">{turma.designacao}</h3>
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{turma.disciplina_nome}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {turma.ano_letivo} · {turma.semestre}º Semestre
+                          {turma.ano_letivo}{turma.semestre ? ` · ${turma.semestre}º Sem` : ''}
                         </p>
                       </div>
                     </div>
-
                     {(turma.data_inicio || turma.data_fim) && (() => {
                       const fmt = v => { if (!v) return '?'; const d = new Date(v + 'T12:00:00'); return isNaN(d) ? v : d.toLocaleDateString('pt-PT') }
                       return <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{fmt(turma.data_inicio)} → {fmt(turma.data_fim)}</p>
                     })()}
-                    {turma.carga_horaria > 0 && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">⏱ {turma.carga_horaria}h</p>
-                    )}
-
-
-                    {/* Schedules */}
+                    {turma.carga_horaria > 0 && <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">⏱ {turma.carga_horaria}h</p>}
                     {horarios[turma.id] && horarios[turma.id].length > 0 && (
                       <div className="mb-3 space-y-1">
-                        {horarios[turma.id].map(h => (
-                          <p key={h.id} className="text-xs text-gray-500 dark:text-gray-400">
-                            📅 {DIAS_SEMANA[h.dia_semana]} {h.hora_inicio}–{h.hora_fim}{h.sala ? ` · ${h.sala}` : ''}
-                          </p>
-                        ))}
+                        {horarios[turma.id].map(h => <p key={h.id} className="text-xs text-gray-500 dark:text-gray-400">📅 {DIAS_SEMANA[h.dia_semana]} {h.hora_inicio}–{h.hora_fim}{h.sala ? ` · ${h.sala}` : ''}</p>)}
                       </div>
                     )}
-
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => abrirHorarios(turma)}
-                        className="flex-1 btn-secondary text-xs py-1.5"
-                        onMouseEnter={() => carregarHorarios(turma.id)}
-                      >
-                        🕐 Horários
-                      </button>
+                      <button onClick={() => abrirHorarios(turma)} className="flex-1 btn-secondary text-xs py-1.5" onMouseEnter={() => carregarHorarios(turma.id)}>🕐 Horários</button>
                       <button onClick={() => exportarRelatorio(turma)} className="btn-secondary text-xs py-1.5 px-3" title="Exportar relatório PDF">📄</button>
                       <button onClick={() => abrirEditar(turma)} className="btn-secondary text-xs py-1.5 px-3">✏️</button>
                       <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
@@ -257,6 +238,43 @@ export default function Turmas() {
               </div>
             </div>
           ))}
+
+          {/* Turmas individuais (1 UFCD/disciplina) lado a lado */}
+          {Object.values(porDisciplina).some(g => g.turmas.length === 1) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.values(porDisciplina).filter(g => g.turmas.length === 1).flatMap(g => g.turmas).map(turma => (
+                <div key={turma.id} className="card hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: turma.cor }}>
+                      {turma.designacao.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{turma.disciplina_nome}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {turma.designacao} · {turma.ano_letivo}{turma.semestre ? ` · ${turma.semestre}º Sem` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {(turma.data_inicio || turma.data_fim) && (() => {
+                    const fmt = v => { if (!v) return '?'; const d = new Date(v + 'T12:00:00'); return isNaN(d) ? v : d.toLocaleDateString('pt-PT') }
+                    return <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{fmt(turma.data_inicio)} → {fmt(turma.data_fim)}</p>
+                  })()}
+                  {turma.carga_horaria > 0 && <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">⏱ {turma.carga_horaria}h</p>}
+                  {horarios[turma.id] && horarios[turma.id].length > 0 && (
+                    <div className="mb-3 space-y-1">
+                      {horarios[turma.id].map(h => <p key={h.id} className="text-xs text-gray-500 dark:text-gray-400">📅 {DIAS_SEMANA[h.dia_semana]} {h.hora_inicio}–{h.hora_fim}{h.sala ? ` · ${h.sala}` : ''}</p>)}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => abrirHorarios(turma)} className="flex-1 btn-secondary text-xs py-1.5" onMouseEnter={() => carregarHorarios(turma.id)}>🕐 Horários</button>
+                    <button onClick={() => exportarRelatorio(turma)} className="btn-secondary text-xs py-1.5 px-3" title="Exportar relatório PDF">📄</button>
+                    <button onClick={() => abrirEditar(turma)} className="btn-secondary text-xs py-1.5 px-3">✏️</button>
+                    <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -353,7 +371,7 @@ export default function Turmas() {
           {/* Color picker */}
           <div>
             <label className="label-field">Cor de identificação</label>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               {COR_PALETTE.map(cor => (
                 <button
                   key={cor}
@@ -365,6 +383,14 @@ export default function Turmas() {
                   title={cor}
                 />
               ))}
+              <label className="w-8 h-8 rounded-full border-2 border-dashed border-gray-400 dark:border-gray-500 cursor-pointer flex items-center justify-center overflow-hidden" title="Cor personalizada">
+                <input
+                  type="color"
+                  value={form.cor}
+                  onChange={e => setForm(f => ({ ...f, cor: e.target.value }))}
+                  className="w-12 h-12 cursor-pointer border-0 p-0 -m-2"
+                />
+              </label>
             </div>
           </div>
 

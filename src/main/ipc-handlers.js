@@ -534,6 +534,12 @@ async function imprimirPDF(html, defaultFileName) {
 
 export function registerHandlers() {
 
+  // ─── Dashboard ──────────────────────────────────────────────────────────
+  ipcMain.handle('dashboard:stats', async () => {
+    try { return { success: true, data: models.obterDashboardStats() } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+
   // ─── Disciplinas ─────────────────────────────────────────────────────────
   ipcMain.handle('disciplinas:listar', async () => {
     try { return { success: true, data: models.listarDisciplinas() } }

@@ -5,6 +5,11 @@ function invoke(channel, ...args) {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  // Dashboard
+  dashboard: {
+    stats: () => invoke('dashboard:stats'),
+  },
+
   // Disciplinas
   disciplinas: {
     listar: () => invoke('disciplinas:listar'),

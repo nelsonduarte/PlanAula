@@ -1067,3 +1067,116 @@ export function obterEstatisticas(ano_letivo) {
     rendimentoMensal
   }
 }
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export function obterDashboardStats() {
+  const db = getDb()
+
+  const duracaoMin = `(
+    CAST(substr(a.hora_fim,1,2) AS INTEGER)*60 + CAST(substr(a.hora_fim,4,2) AS INTEGER) -
+    CAST(substr(a.hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(a.hora_inicio,4,2) AS INTEGER)
+  )`
+
+  // Aulas de hoje
+  const aulasHoje = db.prepare(`
+    SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
+           d.nome as disciplina_nome, COALESCE(a.sala, h.sala) as sala,
+           COALESCE(i.nome, 'Sem instituição') as instituicao_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    LEFT JOIN (
+      SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
+      FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+    ) h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
+         AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
+    WHERE a.data = date('now') AND a.estado != 'Cancelada'
+    ORDER BY a.hora_inicio
+  `).all()
+
+  // Aulas de amanhã
+  const aulasAmanha = db.prepare(`
+    SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
+           d.nome as disciplina_nome, COALESCE(a.sala, h.sala) as sala,
+           COALESCE(i.nome, 'Sem instituição') as instituicao_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    LEFT JOIN (
+      SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
+      FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+    ) h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio
+         AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
+    WHERE a.data = date('now', '+1 day') AND a.estado != 'Cancelada'
+    ORDER BY a.hora_inicio
+  `).all()
+
+  // Avaliações nos próximos 7 dias
+  const avaliacoes = db.prepare(`
+    SELECT a.data_avaliacao, a.data, a.hora_inicio, a.topico,
+           t.designacao as turma_nome, t.cor as turma_cor,
+           d.nome as disciplina_nome
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE a.data_avaliacao IS NOT NULL
+      AND a.data_avaliacao BETWEEN date('now') AND date('now', '+7 days')
+      AND a.estado != 'Cancelada'
+    ORDER BY a.data_avaliacao
+  `).all()
+
+  // Horas esta semana (seg-dom)
+  const horasSemana = db.prepare(`
+    SELECT COALESCE(SUM(${duracaoMin} / 60.0), 0) as total
+    FROM aulas a
+    WHERE a.data BETWEEN date('now', 'weekday 1', '-7 days') AND date('now', 'weekday 0')
+      AND a.estado NOT IN ('Cancelada')
+  `).get()?.total || 0
+
+  // Horas do mês por instituição
+  const horasMesInst = db.prepare(`
+    SELECT COALESCE(i.nome, 'Sem instituição') as instituicao,
+           COALESCE(SUM(${duracaoMin} / 60.0), 0) as horas
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+    WHERE strftime('%Y-%m', a.data) = strftime('%Y-%m', 'now')
+      AND a.estado != 'Cancelada'
+    GROUP BY i.nome
+    ORDER BY horas DESC
+  `).all()
+
+  // Turmas a terminar (< 10% horas restantes)
+  const turmasTerminar = db.prepare(`
+    SELECT t.designacao as turma_nome, d.nome as disciplina_nome, t.cor,
+           t.carga_horaria,
+           COALESCE(SUM(CASE WHEN a.estado != 'Cancelada' AND a.data <= date('now')
+             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_dadas
+    FROM turmas t
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN aulas a ON a.turma_id = t.id
+    WHERE t.carga_horaria > 0
+    GROUP BY t.id
+    HAVING horas_dadas > 0
+      AND (t.carga_horaria - horas_dadas) <= t.carga_horaria * 0.15
+      AND horas_dadas < t.carga_horaria
+    ORDER BY (t.carga_horaria - horas_dadas) ASC
+  `).all()
+
+  // Aulas sem preparação (próximas 2 semanas)
+  const semPreparar = db.prepare(`
+    SELECT COUNT(*) as total FROM aulas
+    WHERE data BETWEEN date('now') AND date('now', '+14 days')
+      AND estado NOT IN ('Cancelada', 'Adiada')
+      AND (topico IS NULL OR topico = '')
+  `).get()?.total || 0
+
+  return { aulasHoje, aulasAmanha, avaliacoes, horasSemana, horasMesInst, turmasTerminar, semPreparar }
+}

@@ -4,11 +4,11 @@ import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
 
-const TIPOS = ['teórica', 'prática', 'mista', 'laboratorial', 'seminarial']
+const TIPOS = ['UC', 'UFCD', 'teórica', 'prática', 'mista', 'laboratorial', 'seminarial']
 
 const emptyForm = {
   nome: '', codigo: '', area_cientifica: '', carga_horaria: 0,
-  ects: '', tipo: 'mista', descricao: '', curso_id: null
+  ects: '', tipo: 'UC', descricao: '', curso_id: null
 }
 
 const emptyModulo = { nome: '', ordem: 0, horas: '', objetivos: '' }
@@ -183,8 +183,8 @@ export default function Disciplinas() {
                       {disc.area_cientifica || 'Sem área'}
                     </p>
                   </div>
-                  <span className={`badge ${disc.tipo === 'teórica' ? 'badge-blue' : disc.tipo === 'prática' ? 'badge-green' : 'badge-yellow'} ml-2 flex-shrink-0`}>
-                    {disc.tipo}
+                  <span className={`badge ${disc.tipo === 'UC' ? 'badge-blue' : disc.tipo === 'UFCD' ? 'badge-green' : 'badge-yellow'} ml-2 flex-shrink-0`}>
+                    {disc.tipo || 'UC'}
                   </span>
                 </div>
 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { useDatabase } from '../hooks/useDatabase.js'
 
 function StatCard({ icon, label, value, sub, color = 'blue' }) {
   const colors = {
@@ -23,73 +22,57 @@ function StatCard({ icon, label, value, sub, color = 'blue' }) {
   )
 }
 
-function EstadoBadge({ estado }) {
-  const map = {
-    'Planeada':  'badge-blue',
-    'Realizada': 'badge-green',
-    'Adiada':    'badge-yellow',
-    'Cancelada': 'badge-red',
-  }
-  return <span className={map[estado] || 'badge-gray'}>{estado}</span>
+function AulaRow({ aula, showDate }) {
+  return (
+    <div className="flex items-center gap-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+      <div className="w-1 h-12 rounded-full flex-shrink-0" style={{ backgroundColor: aula.turma_cor || '#2E86C1' }} />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
+          {aula.disciplina_nome}
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {showDate && <span>{new Date(aula.data + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })} · </span>}
+          {aula.hora_inicio}–{aula.hora_fim}
+          {aula.sala && <span className="ml-1">· {aula.sala}</span>}
+          <span className="ml-1 text-gray-400">· {aula.turma_nome}</span>
+        </p>
+      </div>
+      {aula.topico && <p className="text-xs text-gray-400 dark:text-gray-500 truncate max-w-32 hidden md:block">{aula.topico}</p>}
+    </div>
+  )
 }
 
 export default function Dashboard() {
-  const db = useDatabase()
-  const [aulas, setAulas] = useState([])
-  const [disciplinas, setDisciplinas] = useState([])
+  const [stats, setStats] = useState(null)
   const [financeiro, setFinanceiro] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const hoje = new Date()
-  const hojeStr = hoje.toISOString().split('T')[0]
-  const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const [aulasData, discData, finData] = await Promise.all([
-        db.listarAulas(),
-        db.listarDisciplinas(),
-        db.calcularFinanceiroMensal(hoje.getFullYear(), hoje.getMonth() + 1)
+      const [statsRes, finRes] = await Promise.all([
+        window.api.dashboard.stats(),
+        window.api.financeiro.calcularMensal(hoje.getFullYear(), hoje.getMonth() + 1)
       ])
-      setAulas(aulasData || [])
-      setDisciplinas(discData || [])
-      setFinanceiro(finData)
+      if (statsRes?.success) setStats(statsRes.data)
+      if (finRes?.success) setFinanceiro(finRes.data)
       setLoading(false)
     }
     load()
   }, [])
 
-  const aulasHoje = aulas.filter(a => a.data === hojeStr)
-  const proximasAulas = aulas
-    .filter(a => a.data > hojeStr)
-    .slice(0, 5)
-  const aulasSemPreparar = aulas.filter(a => a.data >= hojeStr && a.estado === 'Planeada' && !a.topico)
-  const aulasDoMes = aulas.filter(a => a.data && a.data.startsWith(mesAtual.slice(0, 7)))
-  const totalHorasMes = aulasDoMes.reduce((sum, a) => {
-    if (!a.hora_inicio || !a.hora_fim) return sum
-    const [hi, mi] = a.hora_inicio.split(':').map(Number)
-    const [hf, mf] = a.hora_fim.split(':').map(Number)
-    return sum + (hf * 60 + mf - hi * 60 - mi) / 60
-  }, 0)
-
-  // Mini weekly calendar
-  const inicioSemana = new Date(hoje)
-  inicioSemana.setDate(hoje.getDate() - hoje.getDay() + 1)
-  const diasSemana = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(inicioSemana)
-    d.setDate(inicioSemana.getDate() + i)
-    return d
-  })
-  const diasSemanaLabels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-
-  if (loading) {
+  if (loading || !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
       </div>
     )
   }
+
+  const totalHorasMes = stats.horasMesInst.reduce((s, i) => s + i.horas, 0)
+  const formatCur = v => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v)
 
   return (
     <div className="space-y-6">
@@ -103,181 +86,156 @@ export default function Dashboard() {
         <Link to="/aulas" className="btn-primary">+ Nova Aula</Link>
       </div>
 
-      {/* Stats */}
+      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon="📚" label="Disciplinas" value={disciplinas.length} color="blue" />
-        <StatCard icon="📝" label="Aulas hoje" value={aulasHoje.length} color="green" />
-        <StatCard icon="⏱️" label="Horas este mês" value={totalHorasMes.toFixed(1) + 'h'} color="purple" />
-        <StatCard
-          icon="💶"
-          label="Rendimento mensal"
-          value={financeiro ? `€${financeiro.total_liquido.toFixed(2)}` : '—'}
-          sub="líquido"
-          color="yellow"
-        />
+        <StatCard icon="📝" label="Aulas hoje" value={stats.aulasHoje.length} sub={stats.aulasAmanha.length > 0 ? `${stats.aulasAmanha.length} amanhã` : 'sem aulas amanhã'} color="green" />
+        <StatCard icon="⏱️" label="Horas esta semana" value={stats.horasSemana.toFixed(1) + 'h'} color="blue" />
+        <StatCard icon="📊" label="Horas este mês" value={totalHorasMes.toFixed(1) + 'h'} sub={`${stats.horasMesInst.length} instituição(ões)`} color="purple" />
+        <StatCard icon="💶" label="Rendimento mensal" value={financeiro ? formatCur(financeiro.total_liquido) : '—'} sub="líquido" color="yellow" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Today's classes */}
+        {/* Left column — Aulas */}
         <div className="lg:col-span-2 space-y-4">
+
+          {/* Aulas de hoje */}
           <div className="card">
             <h2 className="section-title mb-4">Aulas de Hoje</h2>
-            {aulasHoje.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+            {stats.aulasHoje.length === 0 ? (
+              <div className="text-center py-6 text-gray-400 dark:text-gray-500">
                 <p className="text-3xl mb-2">☀️</p>
                 <p>Sem aulas para hoje</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {aulasHoje.map(aula => (
-                  <div key={aula.id} className="flex items-center gap-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                    <div
-                      className="w-1 h-12 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: aula.turma_cor || '#2E86C1' }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
-                        {aula.disciplina_nome} — {aula.turma_nome}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {aula.hora_inicio} – {aula.hora_fim}
-                        {aula.topico && ` · ${aula.topico}`}
-                      </p>
-                    </div>
-                    <EstadoBadge estado={aula.estado} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Upcoming classes */}
-          <div className="card">
-            <h2 className="section-title mb-4">Próximas Aulas</h2>
-            {proximasAulas.length === 0 ? (
-              <p className="text-gray-400 dark:text-gray-500 text-sm py-4 text-center">Sem aulas agendadas</p>
-            ) : (
               <div className="space-y-2">
-                {proximasAulas.map(aula => (
-                  <div key={aula.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <div
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: aula.turma_cor || '#2E86C1' }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                        {aula.disciplina_nome}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {new Date(aula.data + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })} · {aula.hora_inicio}
-                      </p>
-                    </div>
-                    <EstadoBadge estado={aula.estado} />
-                  </div>
-                ))}
+                {stats.aulasHoje.map(a => <AulaRow key={a.id} aula={a} />)}
               </div>
             )}
           </div>
 
-          {/* Alerts */}
-          {aulasSemPreparar.length > 0 && (
+          {/* Aulas de amanhã */}
+          {stats.aulasAmanha.length > 0 && (
+            <div className="card">
+              <h2 className="section-title mb-4">Amanhã</h2>
+              <div className="space-y-2">
+                {stats.aulasAmanha.map(a => <AulaRow key={a.id} aula={a} />)}
+              </div>
+            </div>
+          )}
+
+          {/* Alertas */}
+          {stats.avaliacoes.length > 0 && (
+            <div className="card border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-900/10">
+              <div className="flex items-start gap-3">
+                <span className="text-blue-500 text-xl">📋</span>
+                <div>
+                  <p className="font-medium text-blue-800 dark:text-blue-400">Avaliações próximas</p>
+                  <div className="mt-2 space-y-1">
+                    {stats.avaliacoes.map((av, i) => (
+                      <p key={i} className="text-sm text-blue-700 dark:text-blue-300">
+                        {new Date(av.data_avaliacao + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        {' — '}{av.disciplina_nome} ({av.turma_nome})
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stats.semPreparar > 0 && (
             <div className="card border-l-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/10">
               <div className="flex items-start gap-3">
                 <span className="text-yellow-500 text-xl">⚠️</span>
                 <div>
                   <p className="font-medium text-yellow-800 dark:text-yellow-400">Aulas sem preparação</p>
                   <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                    Tem {aulasSemPreparar.length} aula(s) sem tópico definido.
+                    {stats.semPreparar} aula(s) nas próximas 2 semanas sem tópico definido.
                   </p>
-                  <Link to="/aulas" className="text-sm text-yellow-700 dark:text-yellow-400 underline mt-1 inline-block">
-                    Ver aulas →
-                  </Link>
+                  <Link to="/aulas" className="text-sm text-yellow-700 dark:text-yellow-400 underline mt-1 inline-block">Ver aulas →</Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stats.turmasTerminar.length > 0 && (
+            <div className="card border-l-4 border-green-400 bg-green-50 dark:bg-green-900/10">
+              <div className="flex items-start gap-3">
+                <span className="text-green-500 text-xl">🏁</span>
+                <div>
+                  <p className="font-medium text-green-800 dark:text-green-400">Turmas a terminar</p>
+                  <div className="mt-2 space-y-1">
+                    {stats.turmasTerminar.map((t, i) => (
+                      <p key={i} className="text-sm text-green-700 dark:text-green-300">
+                        <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: t.cor }} />
+                        {t.turma_nome} — {t.disciplina_nome} ({t.horas_dadas.toFixed(0)}h / {t.carga_horaria}h)
+                      </p>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Weekly calendar */}
+        {/* Right column — Resumos */}
         <div className="space-y-4">
+
+          {/* Horas por instituição */}
           <div className="card">
-            <h2 className="section-title mb-4">Esta Semana</h2>
-            <div className="grid grid-cols-7 gap-1 mb-3">
-              {diasSemanaLabels.map(d => (
-                <div key={d} className="text-center text-xs font-medium text-gray-400 dark:text-gray-500">{d}</div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {diasSemana.map((dia, i) => {
-                const diaStr = dia.toISOString().split('T')[0]
-                const aulasNoDia = aulas.filter(a => a.data === diaStr)
-                const isHoje = diaStr === hojeStr
-                return (
-                  <div
-                    key={i}
-                    className={`relative flex flex-col items-center py-2 rounded-lg text-sm ${
-                      isHoje
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <span className="font-medium">{dia.getDate()}</span>
-                    {aulasNoDia.length > 0 && (
-                      <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${isHoje ? 'bg-white' : 'bg-blue-500'}`} />
-                    )}
+            <h2 className="section-title mb-4">Horas do Mês por Instituição</h2>
+            {stats.horasMesInst.length === 0 ? (
+              <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">Sem aulas este mês</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.horasMesInst.map((inst, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-700 dark:text-gray-300 truncate">{inst.instituicao}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{inst.horas.toFixed(1)}h</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-500"
+                        style={{ width: `${totalHorasMes > 0 ? (inst.horas / totalHorasMes * 100) : 0}%` }}
+                      />
+                    </div>
                   </div>
-                )
-              })}
-            </div>
+                ))}
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between text-sm font-bold">
+                  <span className="text-gray-700 dark:text-gray-300">Total</span>
+                  <span className="text-blue-600 dark:text-blue-400">{totalHorasMes.toFixed(1)}h</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Quick financial */}
-          {financeiro && (
+          {/* Resumo financeiro */}
+          {financeiro && financeiro.total_bruto > 0 && (
             <div className="card">
               <h2 className="section-title mb-4">Resumo Financeiro</h2>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500 dark:text-gray-400">Valor bruto</span>
-                  <span className="font-medium text-gray-900 dark:text-white">€{financeiro.total_bruto.toFixed(2)}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{formatCur(financeiro.total_bruto)}</span>
                 </div>
                 {financeiro.taxa_iva > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500 dark:text-gray-400">IVA ({(financeiro.taxa_iva * 100).toFixed(0)}%)</span>
-                    <span className="font-medium text-green-600 dark:text-green-400">+€{financeiro.total_iva.toFixed(2)}</span>
+                    <span className="font-medium text-green-600 dark:text-green-400">+{formatCur(financeiro.total_iva)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500 dark:text-gray-400">Retenção IRS ({(financeiro.taxa_irs * 100).toFixed(0)}%)</span>
-                  <span className="font-medium text-red-600 dark:text-red-400">-€{financeiro.total_irs.toFixed(2)}</span>
+                  <span className="font-medium text-red-600 dark:text-red-400">-{formatCur(financeiro.total_irs)}</span>
                 </div>
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between text-sm font-bold">
                   <span className="text-gray-700 dark:text-gray-300">Valor líquido</span>
-                  <span className="text-blue-600 dark:text-blue-400">€{financeiro.total_liquido.toFixed(2)}</span>
+                  <span className="text-blue-600 dark:text-blue-400">{formatCur(financeiro.total_liquido)}</span>
                 </div>
               </div>
             </div>
           )}
-
-          {/* Disciplines quick list */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="section-title">Disciplinas</h2>
-              <Link to="/disciplinas" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Ver todas</Link>
-            </div>
-            {disciplinas.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">Sem disciplinas</p>
-            ) : (
-              <div className="space-y-2">
-                {disciplinas.slice(0, 5).map(d => (
-                  <div key={d.id} className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{d.nome}</span>
-                    <span className="ml-auto text-xs text-gray-400">{d.carga_horaria}h</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
