@@ -221,7 +221,6 @@ export default function Disciplinas() {
               </div>
 
               <div className="flex items-center gap-2">
-                <button onClick={() => abrirModulos(disc)} className="flex-1 btn-secondary text-xs py-1.5">📋 Módulos</button>
                 <button onClick={() => abrirEditar(disc)} className="btn-secondary text-xs py-1.5 px-3"
                   >
                     ✏️
@@ -488,22 +487,6 @@ export default function Disciplinas() {
               )}
             </div>
 
-            {/* Sincronizar UFCDs */}
-            {disciplinaSelecionada?.tipo === 'UFCD' && (modulos[disciplinaSelecionada?.id] || []).length > 0 && (
-              <button
-                onClick={async () => {
-                  const res = await window.api.modulos.sincronizarUFCD(disciplinaSelecionada.id)
-                  if (res?.success && res.data?.sincronizadas > 0) {
-                    alert(`Módulos sincronizados com ${res.data.sincronizadas} UFCD(s) com o mesmo nome.`)
-                  } else {
-                    alert('Sem outras UFCDs com o mesmo nome para sincronizar.')
-                  }
-                }}
-                className="btn-secondary text-sm w-full"
-              >
-                🔄 Sincronizar módulos com UFCDs do mesmo nome
-              </button>
-            )}
           </div>
         )}
       </Modal>

@@ -382,7 +382,7 @@ export default function Aulas() {
                         {aula.numero != null && <span className="mr-2 font-semibold text-gray-400 dark:text-gray-500">Aula {aula.numero}</span>}
                         {aula.hora_inicio} – {aula.hora_fim}
                         {aula.sala && <span className="ml-2">· 📍 {aula.sala}</span>}
-                        {aula.topico && <span className="ml-2">· {aula.topico}</span>}
+                        {aula.topico && <span className="ml-2 truncate">· {aula.topico}</span>}
                       </p>
                       {aula.modulo_nome && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">{aula.modulo_nome}</p>
@@ -536,12 +536,12 @@ export default function Aulas() {
           </div>
 
           <div>
-            <label className="label-field">Tópico</label>
+            <label className="label-field">{turmas.find(t => String(t.id) === String(form.turma_id))?.disciplina_tipo === 'UFCD' ? 'Sumário' : 'Tópico'}</label>
             <input
               type="text"
               value={form.topico}
               onChange={e => setForm(f => ({ ...f, topico: e.target.value }))}
-              placeholder="Tópico da aula"
+              placeholder={turmas.find(t => String(t.id) === String(form.turma_id))?.disciplina_tipo === 'UFCD' ? 'Sumário da sessão' : 'Tópico da aula'}
               className="input-field"
             />
           </div>

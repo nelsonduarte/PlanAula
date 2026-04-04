@@ -129,7 +129,7 @@ export function listarTurmas(disciplina_id) {
     `).all(disciplina_id)
   }
   return db.prepare(`
-    SELECT t.*, d.nome as disciplina_nome FROM turmas t
+    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
     ORDER BY d.nome, t.ano_letivo DESC, t.designacao
   `).all()
@@ -138,7 +138,7 @@ export function listarTurmas(disciplina_id) {
 export function buscarTurma(id) {
   const db = getDb()
   return db.prepare(`
-    SELECT t.*, d.nome as disciplina_nome FROM turmas t
+    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
     WHERE t.id = ?
   `).get(id)

@@ -95,9 +95,11 @@ contextBridge.exposeInMainWorld('api', {
       invoke('export:relatorioFinanceiro', { dados, tipo, ano, mes, config }),
     calendarioHTML: (html, nome) => invoke('export:calendarioHTML', { html, nome }),
     mobileHTML: () => invoke('export:mobileHTML'),
+    ics: () => invoke('export:ics'),
     relatorioTurma: (turma, horarios, aulas, config) =>
       invoke('export:relatorioTurma', { turma, horarios, aulas, config }),
     turmaPlanos: (turma_id) => invoke('export:turmaPlanos', { turma_id }),
+    folhaHoras: (ano, mes) => invoke('export:folhaHoras', { ano, mes }),
   },
 
   backup: {

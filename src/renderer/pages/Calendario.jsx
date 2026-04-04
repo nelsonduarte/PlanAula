@@ -366,8 +366,21 @@ export default function Calendario() {
             </svg>
             Mobile
           </button>
+          <button
+            onClick={async () => {
+              const res = await window.api.exports.ics()
+              if (res?.success) alert('Calendário exportado! Importe o ficheiro .ics no Google Calendar ou Outlook.')
+            }}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+            title="Exportar para Google Calendar / Outlook"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            .ics
+          </button>
           <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            {['mensal', 'semanal', 'anual'].map(v => (
+            {['mensal', 'semanal', 'agenda', 'anual'].map(v => (
               <button
                 key={v}
                 onClick={() => setVista(v)}
@@ -532,6 +545,59 @@ export default function Calendario() {
                 )
               })}
             </div>
+          </div>
+        ) : vista === 'agenda' ? (
+          /* Agenda view — timeline */
+          <div className="p-4 space-y-3">
+            {diasSemana.map((dia, i) => {
+              const diaStr = toDateStr(dia)
+              const isHoje = diaStr === hojeStr
+              const aulasNoDia = aulas.filter(a => a.data === diaStr).sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''))
+              const feriadoObj = diasNaoLetivos[diaStr] || null
+              const feriado = feriadoObj ? (feriadoObj.descricao || '') : null
+              const totalHorasDia = aulasNoDia.reduce((s, a) => {
+                if (!a.hora_inicio || !a.hora_fim) return s
+                const [hi,mi] = a.hora_inicio.split(':').map(Number)
+                const [hf,mf] = a.hora_fim.split(':').map(Number)
+                return s + (hf*60+mf-hi*60-mi)/60
+              }, 0)
+              return (
+                <div key={i} className={`rounded-lg overflow-hidden border ${isHoje ? 'border-blue-500 dark:border-blue-400' : 'border-gray-200 dark:border-gray-700'}`}>
+                  <div className={`px-4 py-2 font-semibold text-sm flex justify-between items-center ${
+                    isHoje ? 'bg-blue-600 text-white' :
+                    feriado ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
+                    'bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
+                  }`}>
+                    <span>{DIAS_SEMANA_CURTO[dia.getDay()]}, {dia.getDate()} {MESES[dia.getMonth()]}</span>
+                    <span className="text-xs font-normal">
+                      {feriado ? String(feriado) : ''}
+                      {!feriado && aulasNoDia.length > 0 ? `${aulasNoDia.length} aula(s) · ${totalHorasDia.toFixed(1)}h` : ''}
+                    </span>
+                  </div>
+                  {aulasNoDia.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 italic">Sem aulas</div>
+                  ) : (
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                      {aulasNoDia.map(aula => (
+                        <div key={aula.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                          <div className="w-1 h-12 rounded-full flex-shrink-0" style={{ backgroundColor: aula.turma_cor || '#3B82F6' }} />
+                          <div className="w-28 flex-shrink-0">
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">{aula.hora_inicio || ''}</span>
+                            <span className="text-xs text-gray-400 dark:text-gray-500"> – {aula.hora_fim || ''}</span>
+                            {aula.sala && <p className="text-xs text-gray-400 dark:text-gray-500">{aula.sala}</p>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{aula.disciplina_nome || ''}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{aula.turma_nome || ''}</p>
+                            {aula.topico && <p className="text-xs text-blue-500 dark:text-blue-400 truncate mt-0.5">{aula.topico}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         ) : (
           /* Weekly view */

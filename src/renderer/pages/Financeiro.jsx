@@ -175,6 +175,7 @@ export default function Financeiro() {
         <h1 className="page-title">Financeiro</h1>
         <div className="flex gap-2">
           <button onClick={exportarPDF} className="btn-secondary">📄 Exportar PDF</button>
+          <button onClick={() => window.api.exports.folhaHoras(anoSelecionado, mesSelecionado)} className="btn-secondary">📋 Folha de Horas</button>
           <button onClick={abrirCriarOutro} className="btn-secondary">+ Outro Rendimento</button>
           <button onClick={() => setModalValor(true)} className="btn-secondary">💶 Valor/Hora</button>
           <button

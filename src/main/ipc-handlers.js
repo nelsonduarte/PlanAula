@@ -822,9 +822,151 @@ export function registerHandlers() {
     } catch (e) { return { success: false, error: e.message } }
   })
 
+  ipcMain.handle('export:folhaHoras', async (_, { ano, mes }) => {
+    try {
+      const config = models.obterTodasConfiguracoes()
+      const mesStr = `${ano}-${String(mes).padStart(2, '0')}`
+
+      // Buscar aulas do mês com instituição
+      const db = getDb()
+      const aulas = db.prepare(`
+        SELECT a.data, a.hora_inicio, a.hora_fim, d.nome as disciplina, d.tipo as disc_tipo,
+               t.designacao as turma, COALESCE(a.sala, h.sala) as sala,
+               COALESCE(i.nome, 'Sem instituição') as instituicao,
+               (CAST(substr(a.hora_fim,1,2) AS INTEGER)*60 + CAST(substr(a.hora_fim,4,2) AS INTEGER)
+               - CAST(substr(a.hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(a.hora_inicio,4,2) AS INTEGER)) / 60.0 as horas
+        FROM aulas a
+        JOIN turmas t ON t.id = a.turma_id
+        JOIN disciplinas d ON d.id = t.disciplina_id
+        LEFT JOIN cursos c ON c.id = d.curso_id
+        LEFT JOIN instituicoes i ON i.id = c.instituicao_id
+        LEFT JOIN (SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala FROM horarios GROUP BY turma_id, dia_semana, hora_inicio
+        ) h ON h.turma_id = a.turma_id AND h.hora_inicio = a.hora_inicio AND CAST(strftime('%w', a.data) AS INTEGER) = h.dia_semana
+        WHERE strftime('%Y-%m', a.data) = ? AND a.estado != 'Cancelada'
+        ORDER BY a.data, a.hora_inicio
+      `).all(mesStr)
+
+      if (aulas.length === 0) return { success: false, error: 'Sem aulas neste mês' }
+
+      // Agrupar por instituição
+      const porInst = {}
+      aulas.forEach(a => {
+        if (!porInst[a.instituicao]) porInst[a.instituicao] = []
+        porInst[a.instituicao].push(a)
+      })
+
+      const fmtData = ds => { const [y,m,d] = ds.split('-'); return `${d}/${m}/${y}` }
+      const diasSemana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+      const fmtDia = ds => diasSemana[new Date(ds+'T12:00:00').getDay()]
+
+      let tabelas = ''
+      let totalGeral = 0
+      Object.entries(porInst).forEach(([inst, sessoes]) => {
+        const totalInst = sessoes.reduce((s, a) => s + a.horas, 0)
+        totalGeral += totalInst
+
+        // Agrupar por turma dentro da instituição
+        const porTurma = {}
+        sessoes.forEach(a => {
+          const key = `${a.turma}|${a.disciplina}`
+          if (!porTurma[key]) porTurma[key] = { turma: a.turma, disciplina: a.disciplina, disc_tipo: a.disc_tipo, sessoes: [], horas: 0 }
+          porTurma[key].sessoes.push(a)
+          porTurma[key].horas += a.horas
+        })
+
+        let rows = ''
+        Object.values(porTurma).forEach(grupo => {
+          grupo.sessoes.forEach(a => {
+            rows += `<tr><td>${fmtData(a.data)}</td><td>${fmtDia(a.data)}</td><td>${a.disciplina}</td><td>${a.turma}</td><td>${a.hora_inicio}–${a.hora_fim}</td><td>${a.sala||'—'}</td><td class="num">${a.horas.toFixed(1)}</td></tr>`
+          })
+          rows += `<tr class="subtotal"><td colspan="6">${grupo.turma} — ${grupo.disciplina}</td><td class="num"><strong>${grupo.horas.toFixed(1)}h</strong></td></tr>`
+        })
+
+        tabelas += `
+        <div class="inst-section">
+          <h2>${inst}</h2>
+          <table>
+            <thead><tr><th>Data</th><th>Dia</th><th>${sessoes[0]?.disc_tipo === 'UFCD' ? 'UFCD' : 'Disciplina'}</th><th>Turma</th><th>Horário</th><th>Sala</th><th>Horas</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr><td colspan="6"><strong>Total ${inst}</strong></td><td class="num"><strong>${totalInst.toFixed(1)}h</strong></td></tr></tfoot>
+          </table>
+        </div>`
+      })
+
+      const html = `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:10pt;color:#1f2937;padding:24px 32px}
+h1{font-size:14pt;margin-bottom:4px}
+.sub{font-size:10pt;color:#6b7280;margin-bottom:20px}
+.inst-section{margin-bottom:24px}
+.inst-section h2{font-size:11pt;font-weight:700;color:#111827;border-bottom:2px solid #3b82f6;padding-bottom:4px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:8px}
+th{background:#f3f4f6;padding:6px 8px;text-align:left;font-weight:600;border:1px solid #e5e7eb}
+td{padding:5px 8px;border:1px solid #e5e7eb}
+td.num,th:last-child{text-align:right}
+tr.subtotal td{background:#f0f9ff;font-weight:500;border-top:1px solid #bfdbfe}
+tfoot td{background:#f9fafb;border-top:2px solid #d1d5db}
+.total{margin-top:16px;text-align:right;font-size:12pt;font-weight:700}
+.rodape{margin-top:32px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:8pt;color:#9ca3af;display:flex;justify-content:space-between}
+.assinatura{margin-top:40px;text-align:center;border-top:1px solid #9ca3af;padding-top:4px;font-size:9pt;color:#6b7280;width:200px}
+</style></head><body>
+<h1>Folha de Horas — ${MESES_PT[mes-1]} ${ano}</h1>
+<div class="sub">${config.nome_professor || ''}${config.instituicao ? ' · ' + config.instituicao : ''}</div>
+${tabelas}
+<div class="total">Total Geral: ${totalGeral.toFixed(1)}h</div>
+<div class="assinatura">O/A Professor/a Formador/a<br>${config.nome_professor || ''}</div>
+<div class="rodape"><span>Folha de Horas</span><span>PlanAula · ${new Date().toLocaleDateString('pt-PT')}</span></div>
+</body></html>`
+
+      return await imprimirPDF(html, `folha-horas-${MESES_PT[mes-1].toLowerCase()}-${ano}.pdf`)
+    } catch (e) { return { success: false, error: e.message } }
+  })
+
   ipcMain.handle('export:calendarioHTML', async (_, { html, nome }) => {
     try { return await imprimirPDF(html, nome) }
     catch (e) { return { success: false, error: e.message } }
+  })
+
+  ipcMain.handle('export:ics', async () => {
+    try {
+      const aulas = models.listarAulas({})
+      if (!aulas || aulas.length === 0) return { success: false, error: 'Sem aulas para exportar' }
+
+      const { filePath } = await dialog.showSaveDialog({
+        title: 'Exportar Calendário',
+        defaultPath: 'PlanAula.ics',
+        filters: [{ name: 'iCalendar', extensions: ['ics'] }]
+      })
+      if (!filePath) return { success: false, cancelled: true }
+
+      const pad = n => String(n).padStart(2, '0')
+      const toICS = (ds, time) => {
+        const [y, m, d] = ds.split('-')
+        const [h, mi] = time.split(':')
+        return `${y}${pad(m)}${pad(d)}T${pad(h)}${pad(mi)}00`
+      }
+
+      let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PlanAula//PT\r\nCALSCALE:GREGORIAN\r\n'
+      for (const a of aulas) {
+        if (!a.data || !a.hora_inicio || !a.hora_fim || a.estado === 'Cancelada') continue
+        const summary = `${a.disciplina_nome || ''} — ${a.turma_nome || ''}`
+        const desc = a.topico ? a.topico.replace(/\n/g, '\\n') : ''
+        ics += 'BEGIN:VEVENT\r\n'
+        ics += `DTSTART:${toICS(a.data, a.hora_inicio)}\r\n`
+        ics += `DTEND:${toICS(a.data, a.hora_fim)}\r\n`
+        ics += `SUMMARY:${summary}\r\n`
+        if (a.sala) ics += `LOCATION:${a.sala}\r\n`
+        if (desc) ics += `DESCRIPTION:${desc}\r\n`
+        ics += `UID:planaula-${a.id}@local\r\n`
+        ics += 'END:VEVENT\r\n'
+      }
+      ics += 'END:VCALENDAR\r\n'
+
+      fs.writeFileSync(filePath, ics, 'utf-8')
+      shell.showItemInFolder(filePath)
+      return { success: true, path: filePath }
+    } catch (e) { return { success: false, error: e.message } }
   })
 
   ipcMain.handle('export:mobileHTML', async () => {
