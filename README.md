@@ -1,6 +1,6 @@
 # PlanAula
 
-**PlanAula** é uma aplicação desktop para professores planearem, gerirem e acompanharem as suas aulas. Desenvolvida com Electron, React e SQLite — funciona completamente offline, sem necessidade de conta ou ligação à internet.
+**PlanAula** é uma aplicação desktop para professores planearem, gerirem e acompanharem as suas aulas. Desenvolvida com Electron, React e SQLite, funciona completamente offline, sem necessidade de conta ou ligação à internet.
 
 ---
 
