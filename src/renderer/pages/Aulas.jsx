@@ -3,9 +3,15 @@ import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useModoTrabalho, itemDisciplinaTipoPassaModo, useTermos } from '../hooks/useModoTrabalho.jsx'
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 const ESTADOS = ['Planeada', 'Realizada', 'Adiada', 'Cancelada']
+
+function hojeLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 
 const estadoColors = {
   'Planeada':  'badge-blue',
@@ -14,15 +20,40 @@ const estadoColors = {
   'Cancelada': 'badge-red',
 }
 
+// Indicador granular derivado dos campos da aula
+// - 'sem-plano'  → aula futura por preparar (não tem tópico nem objectivos)
+// - 'preparada'  → tem plano (tópico + objectivos), mas ainda não foi dada
+// - 'sem-sumario'→ marcada como Realizada mas falta o sumário pós-aula
+// - 'completa'   → Realizada com sumário registado
+// - null         → Adiada/Cancelada ou não aplicável
+function indicadorAula(aula) {
+  if (!aula) return null
+  if (aula.estado === 'Adiada' || aula.estado === 'Cancelada') return null
+  const temPlano = !!((aula.topico && aula.topico.trim()) || (aula.objetivos && aula.objetivos.trim()))
+  const temSumario = !!(aula.sumario && aula.sumario.trim())
+  if (aula.estado === 'Realizada') return temSumario ? 'completa' : 'sem-sumario'
+  return temPlano ? 'preparada' : 'sem-plano'
+}
+
+const INDICADORES = {
+  'sem-plano':   { label: 'Sem plano',  cor: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
+  'preparada':   { label: 'Preparada',  cor: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  'sem-sumario': { label: 'Sem sumário', cor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
+  'completa':    { label: 'Completa',   cor: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+}
+
 const emptyForm = {
   turma_id: '', modulo_id: '', data: '', hora_inicio: '09:00', hora_fim: '11:00',
   topico: '', objetivos: '', conteudos: '', atividades: '', recursos: '', avaliacao: '', notas: '',
-  estado: 'Planeada', numero: '', data_avaliacao: ''
+  estado: 'Planeada', numero: '', data_avaliacao: '',
+  sumario: '', observacoes_pos: ''
 }
 
 export default function Aulas() {
   const db = useDatabase()
   const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
+  const { modo } = useModoTrabalho()
+  const termos = useTermos()
   const [aulas, setAulas] = useState([])
   const [turmas, setTurmas] = useState([])
   const [disciplinas, setDisciplinas] = useState([])
@@ -75,7 +106,7 @@ export default function Aulas() {
 
   function abrirCriar() {
     setEditando(null)
-    setForm({ ...emptyForm, data: new Date().toISOString().split('T')[0] })
+    setForm({ ...emptyForm, data: hojeLocal() })
     setActiveTab('geral')
     setModalAberto(true)
   }
@@ -97,9 +128,13 @@ export default function Aulas() {
       notas: aula.notas || '',
       estado: aula.estado || 'Planeada',
       numero: aula.numero || '',
-      data_avaliacao: aula.data_avaliacao || ''
+      data_avaliacao: aula.data_avaliacao || '',
+      sumario: aula.sumario || '',
+      observacoes_pos: aula.observacoes_pos || '',
     })
-    setActiveTab('geral')
+    // Se a aula está Realizada e ainda sem sumário, abrir directamente na tab Pós-aula
+    const indic = indicadorAula(aula)
+    setActiveTab(indic === 'sem-sumario' ? 'pos' : 'geral')
     setModalAberto(true)
   }
 
@@ -143,12 +178,12 @@ export default function Aulas() {
   }
 
   async function eliminarTodasFiltradas() {
-    if (aulas.length === 0) return
-    const confirmMsg = aulas.length === 1
+    if (aulasFiltradasModo.length === 0) return
+    const confirmMsg = aulasFiltradasModo.length === 1
       ? 'Eliminar 1 aula?'
-      : `Eliminar ${aulas.length} aulas? Esta ação não pode ser desfeita.`
+      : `Eliminar ${aulasFiltradasModo.length} aulas? Esta ação não pode ser desfeita.`
     if (!await confirm(confirmMsg, { danger: true })) return
-    await Promise.all(aulas.map(a => db.eliminarAula(a.id)))
+    await Promise.all(aulasFiltradasModo.map(a => db.eliminarAula(a.id)))
     await carregarComFiltros()
   }
 
@@ -256,9 +291,11 @@ export default function Aulas() {
     { id: 'conteudos', label: 'Conteúdos' },
     { id: 'atividades', label: 'Atividades' },
     { id: 'avaliacao', label: 'Avaliação' },
+    { id: 'pos', label: 'Pós-aula' },
   ]
 
-  const aulasPorData = aulas.reduce((acc, a) => {
+  const aulasFiltradasModo = aulas.filter(a => itemDisciplinaTipoPassaModo(a, modo))
+  const aulasPorData = aulasFiltradasModo.reduce((acc, a) => {
     const key = a.data
     if (!acc[key]) acc[key] = []
     acc[key].push(a)
@@ -270,10 +307,10 @@ export default function Aulas() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="page-title">Aulas</h1>
+        <h1 className="page-title">{termos.aulas}</h1>
         <div className="flex gap-2">
           <button onClick={() => setModalGerar(true)} className="btn-secondary">⚡ Gerar Automaticamente</button>
-          <button onClick={abrirCriar} className="btn-primary">+ Nova Aula</button>
+          <button onClick={abrirCriar} className="btn-primary">+ {termos.novaAula}</button>
         </div>
       </div>
 
@@ -289,7 +326,11 @@ export default function Aulas() {
             >
               <option value="">Todas</option>
               {turmas.map(t => (
-                <option key={t.id} value={t.id}>{t.disciplina_nome} – {t.designacao}</option>
+                <option key={t.id} value={t.id}>
+                  {t.designacao && t.designacao !== t.disciplina_nome
+                    ? `${t.disciplina_nome} – ${t.designacao}`
+                    : t.disciplina_nome}
+                </option>
               ))}
             </select>
           </div>
@@ -331,19 +372,19 @@ export default function Aulas() {
             Limpar filtros
           </button>
           <span className="text-sm text-gray-500 dark:text-gray-400 self-center">
-            {aulas.length} aula(s) encontrada(s) — {aulas.reduce((sum, a) => {
+            {aulasFiltradasModo.length} {termos.aulas.toLowerCase()} encontrada(s) — {aulasFiltradasModo.reduce((sum, a) => {
               if (!a.hora_inicio || !a.hora_fim) return sum
               const [hi, mi] = a.hora_inicio.split(':').map(Number)
               const [hf, mf] = a.hora_fim.split(':').map(Number)
               return sum + (hf * 60 + mf - hi * 60 - mi) / 60
             }, 0).toFixed(1)}h
           </span>
-          {aulas.length > 0 && (
+          {aulasFiltradasModo.length > 0 && (
             <button
               onClick={eliminarTodasFiltradas}
               className="btn-danger text-xs ml-auto"
             >
-              Eliminar {aulas.length} aula(s)
+              Eliminar {aulasFiltradasModo.length} {termos.aulas.toLowerCase()}
             </button>
           )}
         </div>
@@ -353,7 +394,7 @@ export default function Aulas() {
       {datasOrdenadas.length === 0 ? (
         <div className="card text-center py-12">
           <p className="text-4xl mb-3">📝</p>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">Sem aulas</p>
+          <p className="text-gray-500 dark:text-gray-400 font-medium">Sem {termos.aulas.toLowerCase()}</p>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Crie aulas manualmente ou use a geração automática</p>
         </div>
       ) : (
@@ -371,12 +412,25 @@ export default function Aulas() {
                       style={{ backgroundColor: aula.turma_cor || '#2E86C1' }}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      {aula.curso_nome && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{aula.curso_nome}</p>
+                      )}
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="font-medium text-gray-900 dark:text-white text-sm">
                           {aula.disciplina_nome}
                         </span>
-                        <span className="text-gray-400 dark:text-gray-500 text-xs">·</span>
-                        <span className="text-gray-600 dark:text-gray-400 text-xs">{aula.turma_nome}</span>
+                        {aula.turma_nome && aula.turma_nome !== aula.disciplina_nome && (
+                          <>
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">·</span>
+                            <span className="text-gray-600 dark:text-gray-400 text-xs">{aula.turma_nome}</span>
+                          </>
+                        )}
+                        {(() => {
+                          const ind = indicadorAula(aula)
+                          if (!ind) return null
+                          const c = INDICADORES[ind]
+                          return <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${c.cor}`}>{c.label}</span>
+                        })()}
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {aula.numero != null && <span className="mr-2 font-semibold text-gray-400 dark:text-gray-500">Aula {aula.numero}</span>}
@@ -446,7 +500,7 @@ export default function Aulas() {
       <Modal
         isOpen={modalAberto}
         onClose={() => setModalAberto(false)}
-        title={editando ? 'Editar Plano de Aula' : 'Nova Aula'}
+        title={editando ? `Editar Plano de ${termos.aula}` : termos.novaAula}
         size="xl"
         footer={
           <>
@@ -467,7 +521,11 @@ export default function Aulas() {
               >
                 <option value="">Seleccionar turma...</option>
                 {turmas.map(t => (
-                  <option key={t.id} value={t.id}>{t.disciplina_nome} – {t.designacao}</option>
+                  <option key={t.id} value={t.id}>
+                    {t.designacao && t.designacao !== t.disciplina_nome
+                      ? `${t.disciplina_nome} – ${t.designacao}`
+                      : t.disciplina_nome}
+                  </option>
                 ))}
               </select>
             </div>
@@ -513,7 +571,7 @@ export default function Aulas() {
               />
             </div>
             <div>
-              <label className="label-field">Nº Aula</label>
+              <label className="label-field">Nº {termos.aula}</label>
               <input
                 type="number"
                 min="1"
@@ -648,6 +706,40 @@ export default function Aulas() {
                     className="input-field resize-none"
                   />
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'pos' && (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
+                  Preenche depois da aula para registar o que foi efectivamente dado e notas para o futuro.
+                </p>
+                <div>
+                  <label className="label-field">Sumário (o que foi dado)</label>
+                  <textarea
+                    rows={5}
+                    value={form.sumario}
+                    onChange={e => setForm(f => ({ ...f, sumario: e.target.value }))}
+                    placeholder="Descreve o que foi efectivamente trabalhado..."
+                    className="input-field resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="label-field">Observações pós-aula</label>
+                  <textarea
+                    rows={4}
+                    value={form.observacoes_pos}
+                    onChange={e => setForm(f => ({ ...f, observacoes_pos: e.target.value }))}
+                    placeholder="Reflexão, ajustes a fazer na próxima vez, comentários sobre a turma..."
+                    className="input-field resize-none"
+                  />
+                </div>
+                {form.estado !== 'Realizada' && (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-700 dark:text-blue-300">
+                    <span>💡</span>
+                    <span>Quando guardares com sumário preenchido, podes mudar o estado para <strong>Realizada</strong> na tab Geral.</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

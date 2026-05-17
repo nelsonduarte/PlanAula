@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useModoTrabalho, disciplinaPassaModo, useTermos } from '../hooks/useModoTrabalho.jsx'
 import { useDialog } from '../hooks/useDialog.js'
 
 const TIPOS = ['UC', 'UFCD', 'teórica', 'prática', 'mista', 'laboratorial', 'seminarial']
@@ -119,14 +120,19 @@ export default function Disciplinas() {
     await carregarModulos(disciplinaSelecionada.id)
   }
 
+  const { modo } = useModoTrabalho()
+  const termos = useTermos()
   const filtradas = disciplinas.filter(d =>
-    d.nome.toLowerCase().includes(busca.toLowerCase()) ||
-    (d.codigo || '').toLowerCase().includes(busca.toLowerCase()) ||
-    (d.area_cientifica || '').toLowerCase().includes(busca.toLowerCase())
+    disciplinaPassaModo(d, modo) && (
+      d.nome.toLowerCase().includes(busca.toLowerCase()) ||
+      (d.codigo || '').toLowerCase().includes(busca.toLowerCase()) ||
+      (d.area_cientifica || '').toLowerCase().includes(busca.toLowerCase())
+    )
   )
 
   function calcularProgresso(disc) {
-    const hoje = new Date().toISOString().split('T')[0]
+    const d = new Date()
+    const hoje = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     const aulasDisc = aulas.filter(a =>
       a.disciplina_id === disc.id &&
       a.estado !== 'Cancelada' &&
@@ -144,8 +150,8 @@ export default function Disciplinas() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="page-title">Disciplinas</h1>
-        <button onClick={abrirCriar} className="btn-primary">+ Nova Disciplina</button>
+        <h1 className="page-title">{termos.disciplinas}</h1>
+        <button onClick={abrirCriar} className="btn-primary">+ {termos.novaDisciplina}</button>
       </div>
 
       {/* Search */}
@@ -155,7 +161,7 @@ export default function Disciplinas() {
         </svg>
         <input
           type="text"
-          placeholder="Pesquisar disciplinas..."
+          placeholder={`Pesquisar ${termos.disciplinas.toLowerCase()}...`}
           value={busca}
           onChange={e => setBusca(e.target.value)}
           className="input-field pl-9"
@@ -166,25 +172,26 @@ export default function Disciplinas() {
       {filtradas.length === 0 ? (
         <div className="card text-center py-12">
           <p className="text-4xl mb-3">📚</p>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">Sem disciplinas</p>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Clique em "Nova Disciplina" para começar</p>
+          <p className="text-gray-500 dark:text-gray-400 font-medium">{termos.semDisciplinas}</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Clique em "{termos.novaDisciplina}" para começar</p>
         </div>
       ) : (() => {
-        // Agrupar: UFCDs por nome, UCs por curso
-        const ufcds = filtradas.filter(d => d.tipo === 'UFCD')
-        const ucs = filtradas.filter(d => d.tipo !== 'UFCD')
-
-        const ufcdGroups = {}
-        ufcds.forEach(d => {
-          if (!ufcdGroups[d.nome]) ufcdGroups[d.nome] = []
-          ufcdGroups[d.nome].push(d)
-        })
-
-        const ucGroups = {}
-        ucs.forEach(d => {
+        // Agrupar todas as disciplinas (UC e UFCD) por curso — título do grupo = nome do curso
+        const cursoGroups = {}
+        filtradas.forEach(d => {
           const key = d.curso_nome || 'Sem curso'
-          if (!ucGroups[key]) ucGroups[key] = { instituicao: d.instituicao_nome, discs: [] }
-          ucGroups[key].discs.push(d)
+          if (!cursoGroups[key]) {
+            cursoGroups[key] = {
+              instituicao: d.instituicao_nome,
+              // Marca o grupo como sendo de UFCDs se a maioria/todas forem UFCD (para o badge no título)
+              temUFCD: false,
+              temUC: false,
+              discs: []
+            }
+          }
+          cursoGroups[key].discs.push(d)
+          if (d.tipo === 'UFCD') cursoGroups[key].temUFCD = true
+          else cursoGroups[key].temUC = true
         })
 
         const renderCard = (disc) => {
@@ -194,10 +201,13 @@ export default function Disciplinas() {
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 dark:text-white truncate">{disc.nome}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {disc.codigo && <span className="font-mono">{disc.codigo} · </span>}
-                    {disc.area_cientifica || disc.curso_nome || ''}
-                  </p>
+                  {(disc.codigo || (disc.area_cientifica && disc.area_cientifica !== disc.curso_nome)) && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {disc.codigo && <span className="font-mono">{disc.codigo}</span>}
+                      {disc.codigo && disc.area_cientifica && disc.area_cientifica !== disc.curso_nome && ' · '}
+                      {disc.area_cientifica && disc.area_cientifica !== disc.curso_nome && disc.area_cientifica}
+                    </p>
+                  )}
                 </div>
                 <span className={`badge ${disc.tipo === 'UC' ? 'badge-blue' : disc.tipo === 'UFCD' ? 'badge-green' : 'badge-yellow'} ml-2 flex-shrink-0`}>
                   {disc.tipo || 'UC'}
@@ -245,37 +255,22 @@ export default function Disciplinas() {
 
         return (
           <div className="space-y-6">
-            {/* UFCDs agrupadas por nome */}
-            {Object.keys(ufcdGroups).length > 0 && Object.entries(ufcdGroups).map(([nome, discs]) => (
-              <div key={nome}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="section-title">{nome}</h2>
-                  <span className="badge badge-green text-xs">UFCD</span>
-                  {discs.length > 1 && (
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                      {discs.map(d => d.curso_nome).filter(Boolean).join(' · ')}
-                    </span>
-                  )}
+            {Object.entries(cursoGroups).map(([cursoNome, grupo]) => {
+              const tipoBadge = grupo.temUFCD && !grupo.temUC ? 'UFCD' : grupo.temUC && !grupo.temUFCD ? 'UC' : null
+              const badgeClass = tipoBadge === 'UFCD' ? 'badge-green' : 'badge-blue'
+              return (
+                <div key={cursoNome}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="section-title">{cursoNome}</h2>
+                    {tipoBadge && <span className={`badge ${badgeClass} text-xs`}>{tipoBadge}</span>}
+                    {grupo.instituicao && <span className="text-xs text-gray-400 dark:text-gray-500">{grupo.instituicao}</span>}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {grupo.discs.map(d => renderCard(d))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {discs.map(d => renderCard(d))}
-                </div>
-              </div>
-            ))}
-
-            {/* UCs agrupadas por curso */}
-            {Object.entries(ucGroups).map(([cursoNome, grupo]) => (
-              <div key={cursoNome}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="section-title">{cursoNome}</h2>
-                  <span className="badge badge-blue text-xs">UC</span>
-                  {grupo.instituicao && <span className="text-xs text-gray-400 dark:text-gray-500">{grupo.instituicao}</span>}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {grupo.discs.map(d => renderCard(d))}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )
       })()}
@@ -284,7 +279,7 @@ export default function Disciplinas() {
       <Modal
         isOpen={modalAberto}
         onClose={() => setModalAberto(false)}
-        title={editando ? 'Editar Disciplina' : 'Nova Disciplina'}
+        title={editando ? `Editar ${termos.disciplina}` : termos.novaDisciplina}
         size="lg"
         footer={
           <>

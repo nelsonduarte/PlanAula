@@ -12,26 +12,29 @@ import Cursos from './pages/Cursos.jsx'
 import Definicoes from './pages/Definicoes.jsx'
 import Importar from './pages/Importar.jsx'
 import Ajuda from './pages/Ajuda.jsx'
+import { ModoTrabalhoProvider } from './hooks/useModoTrabalho.jsx'
 
 export default function App() {
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="disciplinas" element={<Disciplinas />} />
-          <Route path="turmas" element={<Turmas />} />
-          <Route path="aulas" element={<Aulas />} />
-          <Route path="calendario" element={<Calendario />} />
-          <Route path="financeiro" element={<Financeiro />} />
-          <Route path="cursos" element={<Cursos />} />
-          <Route path="estatisticas" element={<Estatisticas />} />
-          <Route path="definicoes" element={<Definicoes />} />
-          <Route path="importar" element={<Importar />} />
-          <Route path="ajuda" element={<Ajuda />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <ModoTrabalhoProvider>
+      <HashRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="disciplinas" element={<Disciplinas />} />
+            <Route path="turmas" element={<Turmas />} />
+            <Route path="aulas" element={<Aulas />} />
+            <Route path="calendario" element={<Calendario />} />
+            <Route path="financeiro" element={<Financeiro />} />
+            <Route path="cursos" element={<Cursos />} />
+            <Route path="estatisticas" element={<Estatisticas />} />
+            <Route path="definicoes" element={<Definicoes />} />
+            <Route path="importar" element={<Importar />} />
+            <Route path="ajuda" element={<Ajuda />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </ModoTrabalhoProvider>
   )
 }

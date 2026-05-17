@@ -3,6 +3,7 @@ import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useModoTrabalho, cursoPassaModo } from '../hooks/useModoTrabalho.jsx'
 
 const TIPOS_INSTITUICAO = ['universitária', 'politécnica', 'profissional', 'empresa', 'outra']
 const TIPOS_CURSO = ['semestral', 'anual', 'formação', 'livre']
@@ -15,7 +16,10 @@ const TIPO_CURSO_BADGE = {
 }
 
 const emptyInstForm = { nome: '', tipo: 'universitária', contacto: '', notas: '' }
-const emptyCursoForm = { nome: '', tipo: 'semestral', ano_letivo: '', valor_hora: '', descricao: '', ativo: 1, instituicao_id: null }
+const emptyCursoForm = {
+  nome: '', tipo: 'semestral', ano_letivo: '', valor_hora: '', descricao: '', ativo: 1, instituicao_id: null,
+  tem_componente_variavel: 0, valor_hora_variavel: '', taxa_padrao: 82,
+}
 
 export default function Cursos() {
   const db = useDatabase()
@@ -23,6 +27,7 @@ export default function Cursos() {
   const [instituicoes, setInstituicoes] = useState([])
   const [cursos, setCursos] = useState([])
   const [instSelecionada, setInstSelecionada] = useState(null)
+  const [mostrarTodosAnos, setMostrarTodosAnos] = useState(false)
 
   const [modalInst, setModalInst] = useState(false)
   const [modalCurso, setModalCurso] = useState(false)
@@ -30,6 +35,8 @@ export default function Cursos() {
   const [editandoCurso, setEditandoCurso] = useState(null)
   const [formInst, setFormInst] = useState(emptyInstForm)
   const [formCurso, setFormCurso] = useState(emptyCursoForm)
+
+  const anoAtual = new Date().getFullYear()
 
   useEffect(() => { carregarTudo() }, [])
 
@@ -91,6 +98,9 @@ export default function Cursos() {
       descricao: curso.descricao || '',
       ativo: curso.ativo ?? 1,
       instituicao_id: curso.instituicao_id || null,
+      tem_componente_variavel: curso.tem_componente_variavel ?? 0,
+      valor_hora_variavel: curso.valor_hora_variavel != null ? String(curso.valor_hora_variavel) : '',
+      taxa_padrao: curso.taxa_padrao != null ? curso.taxa_padrao : 82,
     })
     setModalCurso(true)
   }
@@ -101,6 +111,11 @@ export default function Cursos() {
       ...formCurso,
       valor_hora: formCurso.valor_hora !== '' ? parseFloat(formCurso.valor_hora) : null,
       instituicao_id: formCurso.instituicao_id || null,
+      tem_componente_variavel: formCurso.tem_componente_variavel ? 1 : 0,
+      valor_hora_variavel: formCurso.tem_componente_variavel && formCurso.valor_hora_variavel !== ''
+        ? parseFloat(formCurso.valor_hora_variavel) : null,
+      taxa_padrao: formCurso.tem_componente_variavel
+        ? (parseFloat(formCurso.taxa_padrao) || 82) : 82,
     }
     if (editandoCurso) {
       await db.editarCurso(editandoCurso.id, dados)
@@ -118,11 +133,21 @@ export default function Cursos() {
   }
 
   // ── Renderização ──────────────────────────────────────────────────────────
-  const cursosVisiveis = instSelecionada
-    ? cursos.filter(c => c.instituicao_id === instSelecionada.id)
-    : cursos
+  const { modo } = useModoTrabalho()
+  // Filtra por ano corrente (a string do ano_letivo tem de conter o ano actual, ex: "2026" ou "2025/2026")
+  function passaFiltroAno(c) {
+    if (mostrarTodosAnos) return true
+    if (!c.ano_letivo) return false
+    return c.ano_letivo.includes(String(anoAtual))
+  }
 
-  const cursosSemInstituicao = cursos.filter(c => !c.instituicao_id)
+  const cursosFiltrados = cursos.filter(c => passaFiltroAno(c) && cursoPassaModo(c, modo))
+  const cursosVisiveis = instSelecionada
+    ? cursosFiltrados.filter(c => c.instituicao_id === instSelecionada.id)
+    : cursosFiltrados
+
+  const cursosSemInstituicao = cursosFiltrados.filter(c => !c.instituicao_id)
+  const totalEscondidos = cursos.length - cursosFiltrados.length
 
   return (
     <div className="space-y-6">
@@ -131,10 +156,22 @@ export default function Cursos() {
         <div>
           <h1 className="page-title">Cursos & Instituições</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {instituicoes.length} instituição(ões) · {cursos.length} curso(s)
+            {instituicoes.length} instituição(ões) · {cursosFiltrados.length} curso(s)
+            {totalEscondidos > 0 && !mostrarTodosAnos && (
+              <span className="text-gray-400 dark:text-gray-500"> · {totalEscondidos} escondido(s) (outros anos)</span>
+            )}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer select-none mr-2">
+            <input
+              type="checkbox"
+              checked={mostrarTodosAnos}
+              onChange={e => setMostrarTodosAnos(e.target.checked)}
+              className="rounded"
+            />
+            Mostrar todos os anos
+          </label>
           <button onClick={abrirCriarInst} className="btn-secondary text-sm">
             + Instituição
           </button>
@@ -162,12 +199,12 @@ export default function Cursos() {
           >
             <span className="text-sm font-medium">Todos os cursos</span>
             <span className={`text-xs px-1.5 py-0.5 rounded-full ${!instSelecionada ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'}`}>
-              {cursos.length}
+              {cursosFiltrados.length}
             </span>
           </button>
 
           {instituicoes.map(inst => {
-            const n = cursos.filter(c => c.instituicao_id === inst.id).length
+            const n = cursosFiltrados.filter(c => c.instituicao_id === inst.id).length
             const ativa = instSelecionada?.id === inst.id
             return (
               <div key={inst.id} className="group relative">
@@ -218,7 +255,7 @@ export default function Cursos() {
           {!instSelecionada ? (
             <>
               {instituicoes.map(inst => {
-                const cursosInst = cursos.filter(c => c.instituicao_id === inst.id)
+                const cursosInst = cursosFiltrados.filter(c => c.instituicao_id === inst.id)
                 if (!cursosInst.length) return null
                 return (
                   <div key={inst.id}>
@@ -430,6 +467,49 @@ export default function Cursos() {
             />
             <label htmlFor="ativo" className="text-sm text-gray-700 dark:text-gray-300">Curso ativo</label>
           </div>
+
+          {/* Componente variável (Aprendizagem+) */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                id="cv"
+                checked={!!formCurso.tem_componente_variavel}
+                onChange={e => setFormCurso(f => ({ ...f, tem_componente_variavel: e.target.checked ? 1 : 0 }))}
+                className="rounded"
+              />
+              <label htmlFor="cv" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Componente variável (Aprendizagem+ ou similar)
+              </label>
+            </div>
+            {!!formCurso.tem_componente_variavel && (
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                  <label className="label-field">Valor/hora variável (€)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={formCurso.valor_hora_variavel}
+                    onChange={e => setFormCurso(f => ({ ...f, valor_hora_variavel: e.target.value }))}
+                    placeholder="Ex: 5.00"
+                    className="input-field"
+                  />
+                </div>
+                <div>
+                  <label className="label-field">Taxa de permanência padrão (%)</label>
+                  <input
+                    type="number" min="0" max="100" step="1"
+                    value={formCurso.taxa_padrao}
+                    onChange={e => setFormCurso(f => ({ ...f, taxa_padrao: e.target.value }))}
+                    placeholder="Ex: 82"
+                    className="input-field"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400">
+                  Pago se a taxa de permanência da turma atingir o padrão. Ex: Aprendizagem+ paga 5 €/h adicional se ≥ 82%.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
       <DialogModal dialog={dialog} onOk={handleOk} onCancel={handleCancel} />
@@ -469,14 +549,23 @@ function CursoCard({ curso, onEditar, onEliminar }) {
         </span>
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400 mb-3">
+      <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400 mb-3 flex-wrap">
         {curso.ano_letivo && <span>📅 {curso.ano_letivo}</span>}
-        {curso.valor_hora != null ? (
-          <span className="font-semibold text-green-600 dark:text-green-400">
-            💶 {Number(curso.valor_hora).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}/h
+        {(() => {
+          const valor = curso.valor_hora ?? curso.valor_hora_efetivo
+          if (valor == null) return <span className="text-gray-400 italic">sem valor/hora</span>
+          const origemTurmas = curso.valor_hora == null && curso.valor_hora_efetivo != null
+          return (
+            <span className="font-semibold text-green-600 dark:text-green-400">
+              💶 {Number(valor).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}/h
+              {origemTurmas && <span className="ml-1 text-gray-400 dark:text-gray-500 font-normal">(turmas)</span>}
+            </span>
+          )
+        })()}
+        {!!curso.tem_componente_variavel && curso.valor_hora_variavel != null && (
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            + {Number(curso.valor_hora_variavel).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}/h se ≥ {curso.taxa_padrao || 82}%
           </span>
-        ) : (
-          <span className="text-gray-400 italic">sem valor/hora</span>
         )}
       </div>
 

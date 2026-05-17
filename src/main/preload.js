@@ -69,8 +69,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // Financeiro
   financeiro: {
-    calcularMensal: (ano, mes) => invoke('financeiro:calcularMensal', { ano, mes }),
-    calcularAnual: (ano) => invoke('financeiro:calcularAnual', ano),
+    calcularMensal: (ano, mes, modo, incluirComponenteVariavel) => invoke('financeiro:calcularMensal', { ano, mes, modo, incluirComponenteVariavel }),
+    calcularAnual: (ano, modo, incluirComponenteVariavel) => invoke('financeiro:calcularAnual', { ano, modo, incluirComponenteVariavel }),
     obterConfig: (ano) => invoke('financeiro:obterConfig', ano),
     salvarConfig: (dados) => invoke('financeiro:salvarConfig', dados),
     listarValoresHora: (ano_letivo) => invoke('financeiro:listarValoresHora', ano_letivo),
@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Estatísticas
   estatisticas: {
-    obter: (ano_letivo) => invoke('estatisticas:obter', ano_letivo),
+    obter: (ano_letivo, modo) => invoke('estatisticas:obter', { ano_letivo, modo }),
   },
 
   // Exportação PDF

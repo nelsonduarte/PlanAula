@@ -23,10 +23,13 @@ function StatCard({ icon, label, value, sub, color = 'blue' }) {
 }
 
 function AulaRow({ aula, showDate }) {
+  // Para UFCD a designacao da turma costuma duplicar o nome da disciplina — omitir nesses casos
+  const turmaDistinta = aula.turma_nome && aula.turma_nome !== aula.disciplina_nome
   return (
     <div className="flex items-center gap-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
       <div className="w-1 h-12 rounded-full flex-shrink-0" style={{ backgroundColor: aula.turma_cor || '#2E86C1' }} />
       <div className="flex-1 min-w-0">
+        {aula.curso_nome && <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{aula.curso_nome}</p>}
         <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
           {aula.disciplina_nome}
         </p>
@@ -34,7 +37,7 @@ function AulaRow({ aula, showDate }) {
           {showDate && <span>{new Date(aula.data + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })} · </span>}
           {aula.hora_inicio}–{aula.hora_fim}
           {aula.sala && <span className="ml-1">· {aula.sala}</span>}
-          <span className="ml-1 text-gray-400">· {aula.turma_nome}</span>
+          {turmaDistinta && <span className="ml-1 text-gray-400">· {aula.turma_nome}</span>}
         </p>
       </div>
       {aula.topico && <p className="text-xs text-gray-400 dark:text-gray-500 truncate max-w-32 hidden md:block">{aula.topico}</p>}
@@ -153,6 +156,21 @@ export default function Dashboard() {
                     {stats.semPreparar} aula(s) nas próximas 2 semanas sem tópico definido.
                   </p>
                   <Link to="/aulas" className="text-sm text-yellow-700 dark:text-yellow-400 underline mt-1 inline-block">Ver aulas →</Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stats.semSumario > 0 && (
+            <div className="card border-l-4 border-orange-400 bg-orange-50 dark:bg-orange-900/10">
+              <div className="flex items-start gap-3">
+                <span className="text-orange-500 text-xl">📝</span>
+                <div>
+                  <p className="font-medium text-orange-800 dark:text-orange-400">Aulas dadas sem sumário</p>
+                  <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                    {stats.semSumario} aula(s) realizada(s) nas últimas 4 semanas ainda sem sumário registado.
+                  </p>
+                  <Link to="/aulas" className="text-sm text-orange-700 dark:text-orange-400 underline mt-1 inline-block">Ver aulas →</Link>
                 </div>
               </div>
             </div>

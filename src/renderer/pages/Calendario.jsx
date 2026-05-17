@@ -3,6 +3,7 @@ import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useModoTrabalho, itemDisciplinaTipoPassaModo } from '../hooks/useModoTrabalho.jsx'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const DIAS_SEMANA_CURTO = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
@@ -24,6 +25,7 @@ function toDateStr(d) {
 export default function Calendario() {
   const db = useDatabase()
   const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
+  const { modo } = useModoTrabalho()
   const [aulas, setAulas] = useState([])
   const [diasNaoLetivos, setDiasNaoLetivos] = useState({})
   const [vista, setVista] = useState('mensal')
@@ -40,7 +42,7 @@ export default function Calendario() {
   const hoje = new Date()
   const hojeStr = toDateStr(hoje)
 
-  useEffect(() => { carregarDados() }, [dataAtual, vista])
+  useEffect(() => { carregarDados() }, [dataAtual, vista, modo])
 
   async function carregarDados() {
     let data_inicio, data_fim
@@ -70,7 +72,9 @@ export default function Calendario() {
       db.listarPeriodosNaoLetivos(),
       db.listarInstituicoes()
     ])
-    setAulas(aulasData || [])
+    // Filtrar pelo modo de trabalho (ensino/formacao/todos)
+    const aulasFiltradas = (aulasData || []).filter(a => itemDisciplinaTipoPassaModo(a, modo))
+    setAulas(aulasFiltradas)
     setPeriodos(periodosData || [])
     setInstituicoes(instData || [])
 

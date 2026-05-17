@@ -2,7 +2,7 @@ import { getDb } from './db.js'
 
 // ─── Sistema de Migrações com Versões ─────────────────────────────────────────
 // Cada migração é uma função que recebe o `db` e faz as alterações necessárias.
-// A versão actual é guardada na tabela `schema_version`.
+// A versão actual é guardada na tabela `schema_version` (linha única, id=1).
 // Novas migrações devem ser adicionadas ao array MIGRATIONS com o índice sequencial.
 
 const MIGRATIONS = [
@@ -130,33 +130,84 @@ const MIGRATIONS = [
 
   // v3 — Semestre nullable + ano_letivo nullable (formação profissional)
   function v3_semestre_nullable(db) {
-    const info = db.prepare(`PRAGMA table_info(turmas)`).all().find(c => c.name === 'semestre')
-    if (info && info.notnull === 1) {
-      const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name='turmas'").get()?.sql
-      if (sql) {
-        const newSql = sql
-          .replace('semestre INTEGER NOT NULL DEFAULT 1', 'semestre INTEGER DEFAULT NULL')
-          .replace('ano_letivo TEXT NOT NULL', 'ano_letivo TEXT')
-          .replace('CREATE TABLE turmas', 'CREATE TABLE turmas_new')
-        db.exec('PRAGMA foreign_keys=OFF;')
-        db.exec(newSql)
-        db.exec('INSERT INTO turmas_new SELECT * FROM turmas;')
-        db.exec('DROP TABLE turmas;')
-        db.exec('ALTER TABLE turmas_new RENAME TO turmas;')
-        db.exec('PRAGMA foreign_keys=ON;')
-      }
+    const info = db.prepare(`PRAGMA table_info(turmas)`).all()
+    const semestreCol = info.find(c => c.name === 'semestre')
+    const anoLetivoCol = info.find(c => c.name === 'ano_letivo')
+    // Já nullable: nada a fazer
+    if ((!semestreCol || semestreCol.notnull === 0) && (!anoLetivoCol || anoLetivoCol.notnull === 0)) return
+
+    // Recriar a tabela com o esquema correcto, copiando dados pela intersecção de colunas
+    db.exec('PRAGMA foreign_keys=OFF;')
+    db.exec(`
+      CREATE TABLE turmas_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id) ON DELETE CASCADE,
+        designacao TEXT NOT NULL,
+        ano_letivo TEXT,
+        semestre INTEGER DEFAULT NULL,
+        sala TEXT,
+        cor TEXT DEFAULT '#2E86C1',
+        data_inicio DATE,
+        data_fim DATE,
+        carga_horaria INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+    const colsAntigas = info.map(c => c.name)
+    const colsNovas = ['id','disciplina_id','designacao','ano_letivo','semestre','sala','cor','data_inicio','data_fim','carga_horaria']
+    const colsComuns = colsNovas.filter(c => colsAntigas.includes(c))
+    db.exec(`INSERT INTO turmas_new (${colsComuns.join(',')}) SELECT ${colsComuns.join(',')} FROM turmas;`)
+    db.exec('DROP TABLE turmas;')
+    db.exec('ALTER TABLE turmas_new RENAME TO turmas;')
+    db.exec('PRAGMA foreign_keys=ON;')
+  },
+
+  // v4 — Componente variável do valor/hora (Aprendizagem+ e similares)
+  function v4_componente_variavel(db) {
+    const addCol = (table, col, def) => {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+      if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
     }
+    addCol('cursos', 'tem_componente_variavel', 'INTEGER NOT NULL DEFAULT 0')
+    addCol('cursos', 'valor_hora_variavel', 'REAL')
+    addCol('cursos', 'taxa_padrao', 'REAL DEFAULT 82')
+  },
+
+  // v5 — Pós-aula: sumário real e observações pós-aula
+  function v5_pos_aula(db) {
+    const addCol = (table, col, def) => {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+      if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+    }
+    addCol('aulas', 'sumario', 'TEXT')
+    addCol('aulas', 'observacoes_pos', 'TEXT')
   },
 ]
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
+function garantirSchemaVersion(db) {
+  // Cria a tabela schema_version com chave primária (linha única id=1).
+  // Se já existir sem PK (versão antiga), faz upgrade preservando a versão máxima.
+  const existe = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'").get()
+  if (!existe) {
+    db.exec('CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL DEFAULT 0)')
+    return
+  }
+  const info = db.prepare(`PRAGMA table_info(schema_version)`).all()
+  const temPk = info.some(c => c.pk > 0)
+  if (temPk) return
+
+  const maxV = db.prepare('SELECT MAX(version) as v FROM schema_version').get()?.v
+  db.exec('DROP TABLE schema_version;')
+  db.exec('CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL DEFAULT 0)')
+  if (maxV != null) db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(maxV)
+}
+
 export function runMigrations() {
   const db = getDb()
 
-  // Criar tabela de versão se não existir
-  db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)')
-  const row = db.prepare('SELECT version FROM schema_version').get()
+  garantirSchemaVersion(db)
+  const row = db.prepare('SELECT version FROM schema_version WHERE id = 1').get()
   let currentVersion = row?.version ?? -1
 
   if (!row) {
@@ -167,11 +218,11 @@ export function runMigrations() {
       for (let i = 0; i < MIGRATIONS.length; i++) {
         try { MIGRATIONS[i](db) } catch (e) { /* migração já aplicada, ignorar */ }
       }
-      db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(MIGRATIONS.length - 1)
+      db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(MIGRATIONS.length - 1)
       return
     }
     // BD nova — inserir versão -1
-    db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(-1)
+    db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(-1)
     currentVersion = -1
   }
 
@@ -179,11 +230,11 @@ export function runMigrations() {
   for (let i = currentVersion + 1; i < MIGRATIONS.length; i++) {
     try {
       MIGRATIONS[i](db)
-      db.prepare('UPDATE schema_version SET version = ?').run(i)
+      db.prepare('UPDATE schema_version SET version = ? WHERE id = 1').run(i)
     } catch (e) {
       console.error(`Migração v${i} falhou:`, e.message)
-      // Tentar continuar — a migração pode já ter sido parcialmente aplicada
-      db.prepare('UPDATE schema_version SET version = ?').run(i)
+      // NÃO marcar como aplicada — deixar pendente para nova tentativa no próximo arranque
+      throw e
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   LineChart, Line, ResponsiveContainer, Area, AreaChart
 } from 'recharts'
 import { useDatabase } from '../hooks/useDatabase.js'
+import { useModoTrabalho } from '../hooks/useModoTrabalho.jsx'
 
 const CORES_GRAFICO = [
   '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6',
@@ -38,16 +39,17 @@ function KpiCard({ value, label, color, sub }) {
 
 export default function Estatisticas() {
   const db = useDatabase()
+  const { modo } = useModoTrabalho()
   const anoAtual = new Date().getFullYear()
   const [anoSelecionado, setAnoSelecionado] = useState(anoAtual)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { carregarStats() }, [anoSelecionado])
+  useEffect(() => { carregarStats() }, [anoSelecionado, modo])
 
   async function carregarStats() {
     setLoading(true)
-    const data = await db.obterEstatisticas(anoSelecionado)
+    const data = await db.obterEstatisticas(anoSelecionado, modo)
     setStats(data)
     setLoading(false)
   }

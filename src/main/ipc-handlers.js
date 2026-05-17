@@ -687,13 +687,13 @@ export function registerHandlers() {
   })
 
   // ─── Financeiro ───────────────────────────────────────────────────────────
-  ipcMain.handle('financeiro:calcularMensal', async (_, { ano, mes }) => {
-    try { return { success: true, data: models.calcularFinanceiroMensal(ano, mes) } }
+  ipcMain.handle('financeiro:calcularMensal', async (_, { ano, mes, modo, incluirComponenteVariavel }) => {
+    try { return { success: true, data: models.calcularFinanceiroMensal(ano, mes, modo, incluirComponenteVariavel) } }
     catch (e) { return { success: false, error: e.message } }
   })
 
-  ipcMain.handle('financeiro:calcularAnual', async (_, ano) => {
-    try { return { success: true, data: models.calcularFinanceiroAnual(ano) } }
+  ipcMain.handle('financeiro:calcularAnual', async (_, { ano, modo, incluirComponenteVariavel }) => {
+    try { return { success: true, data: models.calcularFinanceiroAnual(ano, modo, incluirComponenteVariavel) } }
     catch (e) { return { success: false, error: e.message } }
   })
 
@@ -738,8 +738,8 @@ export function registerHandlers() {
   })
 
   // ─── Estatísticas ─────────────────────────────────────────────────────────
-  ipcMain.handle('estatisticas:obter', async (_, ano_letivo) => {
-    try { return { success: true, data: models.obterEstatisticas(ano_letivo) } }
+  ipcMain.handle('estatisticas:obter', async (_, { ano_letivo, modo } = {}) => {
+    try { return { success: true, data: models.obterEstatisticas(ano_letivo, modo) } }
     catch (e) { return { success: false, error: e.message } }
   })
 

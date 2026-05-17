@@ -92,21 +92,30 @@ export function sincronizarModulosUFCD(disciplina_id) {
   if (irmãs.length === 0) return { sincronizadas: 0 }
 
   const modulosOrigem = db.prepare('SELECT * FROM modulos WHERE disciplina_id = ? ORDER BY ordem').all(disciplina_id)
+  // Não sincronizar se a origem está vazia — evita apagar módulos das irmãs sem ter como repor
+  if (!modulosOrigem.length) return { sincronizadas: 0, motivo: 'origem_vazia' }
 
   let sincronizadas = 0
-  for (const irma of irmãs) {
-    // Limpar módulos existentes da irmã e copiar os da origem
-    db.prepare('DELETE FROM modulos WHERE disciplina_id = ?').run(irma.id)
-    for (const mod of modulosOrigem) {
-      db.prepare('INSERT INTO modulos (disciplina_id, nome, ordem, horas, objetivos) VALUES (?, ?, ?, ?, ?)')
-        .run(irma.id, mod.nome, mod.ordem, mod.horas, mod.objetivos)
+  const tx = db.transaction(() => {
+    for (const irma of irmãs) {
+      db.prepare('DELETE FROM modulos WHERE disciplina_id = ?').run(irma.id)
+      for (const mod of modulosOrigem) {
+        db.prepare('INSERT INTO modulos (disciplina_id, nome, ordem, horas, objetivos) VALUES (?, ?, ?, ?, ?)')
+          .run(irma.id, mod.nome, mod.ordem, mod.horas, mod.objetivos)
+      }
+      sincronizadas++
     }
-    sincronizadas++
-  }
+  })
+  tx()
   return { sincronizadas }
 }
 
 // ─── Turmas ──────────────────────────────────────────────────────────────────
+
+const TURMA_DEFAULTS = {
+  ano_letivo: null, semestre: null, sala: null, cor: '#2E86C1',
+  data_inicio: null, data_fim: null, carga_horaria: 0
+}
 
 export function criarTurma(dados) {
   const db = getDb()
@@ -114,7 +123,7 @@ export function criarTurma(dados) {
     INSERT INTO turmas (disciplina_id, designacao, ano_letivo, semestre, sala, cor, data_inicio, data_fim, carga_horaria)
     VALUES (@disciplina_id, @designacao, @ano_letivo, @semestre, @sala, @cor, @data_inicio, @data_fim, @carga_horaria)
   `)
-  const result = stmt.run({ semestre: null, ...dados })
+  const result = stmt.run({ ...TURMA_DEFAULTS, ...dados })
   return { id: result.lastInsertRowid, ...dados }
 }
 
@@ -122,15 +131,23 @@ export function listarTurmas(disciplina_id) {
   const db = getDb()
   if (disciplina_id) {
     return db.prepare(`
-      SELECT t.*, d.nome as disciplina_nome FROM turmas t
+      SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo,
+             c.nome as curso_nome, i.nome as instituicao_nome
+      FROM turmas t
       JOIN disciplinas d ON d.id = t.disciplina_id
+      LEFT JOIN cursos c ON c.id = d.curso_id
+      LEFT JOIN instituicoes i ON i.id = c.instituicao_id
       WHERE t.disciplina_id = ?
       ORDER BY t.ano_letivo DESC, t.designacao
     `).all(disciplina_id)
   }
   return db.prepare(`
-    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo FROM turmas t
+    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, i.nome as instituicao_nome
+    FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     ORDER BY d.nome, t.ano_letivo DESC, t.designacao
   `).all()
 }
@@ -138,8 +155,12 @@ export function listarTurmas(disciplina_id) {
 export function buscarTurma(id) {
   const db = getDb()
   return db.prepare(`
-    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo FROM turmas t
+    SELECT t.*, d.nome as disciplina_nome, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, i.nome as instituicao_nome
+    FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     WHERE t.id = ?
   `).get(id)
 }
@@ -151,16 +172,19 @@ export function editarTurma(id, dados) {
       ano_letivo=@ano_letivo, semestre=@semestre, sala=@sala, cor=@cor,
       data_inicio=@data_inicio, data_fim=@data_fim, carga_horaria=@carga_horaria
     WHERE id=@id
-  `).run({ ...dados, id })
+  `).run({ ...TURMA_DEFAULTS, ...dados, id })
   return buscarTurma(id)
 }
 
 export function eliminarTurma(id) {
   const db = getDb()
-  db.prepare('DELETE FROM aulas WHERE turma_id = ?').run(id)
-  db.prepare('DELETE FROM horarios WHERE turma_id = ?').run(id)
-  db.prepare('DELETE FROM valores_hora WHERE turma_id = ?').run(id)
-  db.prepare('DELETE FROM turmas WHERE id = ?').run(id)
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM aulas WHERE turma_id = ?').run(id)
+    db.prepare('DELETE FROM horarios WHERE turma_id = ?').run(id)
+    db.prepare('DELETE FROM valores_hora WHERE turma_id = ?').run(id)
+    db.prepare('DELETE FROM turmas WHERE id = ?').run(id)
+  })
+  tx()
   return { success: true }
 }
 
@@ -212,16 +236,24 @@ export function proximoNumeroAula(turma_id) {
   return (row?.max || 0) + 1
 }
 
+const AULA_DEFAULTS = {
+  sala: null, sumario: null, observacoes_pos: null,
+  objetivos: null, conteudos: null, atividades: null, recursos: null,
+  avaliacao: null, notas: null, data_avaliacao: null
+}
+
 export function criarAula(dados) {
   const db = getDb()
   const numero = dados.numero != null ? dados.numero : proximoNumeroAula(dados.turma_id)
   const stmt = db.prepare(`
     INSERT INTO aulas (turma_id, modulo_id, data, hora_inicio, hora_fim, topico,
-      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao, sala)
+      objetivos, conteudos, atividades, recursos, avaliacao, notas, estado, numero, data_avaliacao, sala,
+      sumario, observacoes_pos)
     VALUES (@turma_id, @modulo_id, @data, @hora_inicio, @hora_fim, @topico,
-      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao, @sala)
+      @objetivos, @conteudos, @atividades, @recursos, @avaliacao, @notas, @estado, @numero, @data_avaliacao, @sala,
+      @sumario, @observacoes_pos)
   `)
-  const result = stmt.run({ sala: null, ...dados, numero })
+  const result = stmt.run({ ...AULA_DEFAULTS, ...dados, numero })
   return { id: result.lastInsertRowid, ...dados, numero }
 }
 
@@ -229,11 +261,14 @@ export function listarAulas(filtros = {}) {
   const db = getDb()
   let query = `
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
-           d.nome as disciplina_nome, d.id as disciplina_id,
+           d.nome as disciplina_nome, d.id as disciplina_id, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, i.nome as instituicao_nome,
            m.nome as modulo_nome, COALESCE(a.sala, h.sala) as sala
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
     LEFT JOIN (
       SELECT turma_id, dia_semana, hora_inicio, MIN(sala) as sala
@@ -263,9 +298,11 @@ export function listarAulas(filtros = {}) {
   }
   if (filtros.estado) {
     if (filtros.estado === 'Realizada') {
-      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data <= date('now')"
+      // Aula passou: ou é dia anterior, ou é hoje e já terminou
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND (a.data < date('now') OR (a.data = date('now') AND a.hora_fim <= time('now')))"
     } else if (filtros.estado === 'Planeada') {
-      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND a.data > date('now')"
+      // Aula ainda por dar: dia futuro, ou hoje mas ainda não terminou
+      query += " AND a.estado NOT IN ('Adiada','Cancelada') AND (a.data > date('now') OR (a.data = date('now') AND a.hora_fim > time('now')))"
     } else {
       query += ' AND a.estado = ?'
       params.push(filtros.estado)
@@ -284,11 +321,14 @@ export function buscarAula(id) {
   const db = getDb()
   return db.prepare(`
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
-           d.nome as disciplina_nome, d.id as disciplina_id,
+           d.nome as disciplina_nome, d.id as disciplina_id, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, i.nome as instituicao_nome,
            m.nome as modulo_nome
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
+    LEFT JOIN cursos c ON c.id = d.curso_id
+    LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     LEFT JOIN modulos m ON m.id = a.modulo_id
     WHERE a.id = ?
   `).get(id)
@@ -302,9 +342,10 @@ export function editarAula(id, dados) {
       objetivos=@objetivos, conteudos=@conteudos, atividades=@atividades,
       recursos=@recursos, avaliacao=@avaliacao, notas=@notas, estado=@estado,
       numero=COALESCE(@numero, numero), data_avaliacao=@data_avaliacao,
+      sumario=@sumario, observacoes_pos=@observacoes_pos,
       updated_at=CURRENT_TIMESTAMP
     WHERE id=@id
-  `).run({ ...dados, numero: dados.numero ?? null, id })
+  `).run({ ...AULA_DEFAULTS, ...dados, numero: dados.numero ?? null, id })
   return buscarAula(id)
 }
 
@@ -394,8 +435,18 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   const start = new Date(data_inicio)
   const end = new Date(data_fim)
   const aulas = []
+  const conflitos = []
   let horas_geradas = 0
   let parar = false
+
+  // Detecta conflito com outras turmas no mesmo dia/hora
+  const stmtConflito = db.prepare(`
+    SELECT a.id, t.designacao FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    WHERE a.data = ? AND a.turma_id != ? AND a.estado != 'Cancelada'
+      AND a.hora_inicio < ? AND a.hora_fim > ?
+    LIMIT 1
+  `)
 
   const current = new Date(start)
   while (current <= end && !parar) {
@@ -431,6 +482,13 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
           }
         }
 
+        // Verificar conflito com outras turmas (mesmo dia, sobreposição de horário)
+        const conf = stmtConflito.get(dataStr, turma_id, horaFim, h.hora_inicio)
+        if (conf) {
+          conflitos.push({ data: dataStr, hora_inicio: h.hora_inicio, hora_fim: horaFim, turma: conf.designacao })
+          continue
+        }
+
         const a = criarAula({
           turma_id, modulo_id: null, data: dataStr,
           hora_inicio: h.hora_inicio, hora_fim: horaFim,
@@ -451,7 +509,7 @@ export function gerarAulasAutomatico(turma_id, data_inicio, data_fim) {
   }
 
   const limite_atingido = carga_horaria > 0 && (horas_existentes + horas_geradas) >= carga_horaria
-  return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido }
+  return { aulas, horas_geradas, horas_existentes, carga_horaria, limite_atingido, conflitos }
 }
 
 // ─── Instituições ─────────────────────────────────────────────────────────────
@@ -486,26 +544,44 @@ export function eliminarInstituicao(id) {
 
 // ─── Cursos ───────────────────────────────────────────────────────────────────
 
+const CURSO_DEFAULTS = {
+  tem_componente_variavel: 0, valor_hora_variavel: null, taxa_padrao: 82
+}
+
 export function criarCurso(dados) {
   const db = getDb()
   const result = db.prepare(`
-    INSERT INTO cursos (instituicao_id, nome, tipo, ano_letivo, valor_hora, descricao, ativo)
-    VALUES (@instituicao_id, @nome, @tipo, @ano_letivo, @valor_hora, @descricao, @ativo)
-  `).run(dados)
+    INSERT INTO cursos (instituicao_id, nome, tipo, ano_letivo, valor_hora, descricao, ativo,
+                        tem_componente_variavel, valor_hora_variavel, taxa_padrao)
+    VALUES (@instituicao_id, @nome, @tipo, @ano_letivo, @valor_hora, @descricao, @ativo,
+            @tem_componente_variavel, @valor_hora_variavel, @taxa_padrao)
+  `).run({ ...CURSO_DEFAULTS, ...dados })
   return { id: result.lastInsertRowid, ...dados }
 }
 
 export function listarCursos(instituicao_id) {
   const db = getDb()
+  // valor_hora_efetivo: usa valor do curso; se não tiver, usa o valor_hora mais frequente nas turmas associadas
+  const valorHoraEfetivo = `
+    COALESCE(c.valor_hora, (
+      SELECT vh.valor_hora FROM valores_hora vh
+      JOIN turmas t ON t.id = vh.turma_id
+      JOIN disciplinas d ON d.id = t.disciplina_id
+      WHERE d.curso_id = c.id AND vh.valor_hora IS NOT NULL
+      GROUP BY vh.valor_hora
+      ORDER BY COUNT(*) DESC, vh.id DESC
+      LIMIT 1
+    )) as valor_hora_efetivo
+  `
   if (instituicao_id) {
     return db.prepare(`
-      SELECT c.*, i.nome as instituicao_nome
+      SELECT c.*, i.nome as instituicao_nome, ${valorHoraEfetivo}
       FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id
       WHERE c.instituicao_id = ? ORDER BY c.nome
     `).all(instituicao_id)
   }
   return db.prepare(`
-    SELECT c.*, i.nome as instituicao_nome
+    SELECT c.*, i.nome as instituicao_nome, ${valorHoraEfetivo}
     FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     ORDER BY i.nome, c.nome
   `).all()
@@ -515,9 +591,11 @@ export function editarCurso(id, dados) {
   const db = getDb()
   db.prepare(`
     UPDATE cursos SET instituicao_id=@instituicao_id, nome=@nome, tipo=@tipo,
-      ano_letivo=@ano_letivo, valor_hora=@valor_hora, descricao=@descricao, ativo=@ativo
+      ano_letivo=@ano_letivo, valor_hora=@valor_hora, descricao=@descricao, ativo=@ativo,
+      tem_componente_variavel=@tem_componente_variavel, valor_hora_variavel=@valor_hora_variavel,
+      taxa_padrao=@taxa_padrao
     WHERE id=@id
-  `).run({ ...dados, id })
+  `).run({ ...CURSO_DEFAULTS, ...dados, id })
   return db.prepare(`
     SELECT c.*, i.nome as instituicao_nome
     FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id WHERE c.id = ?
@@ -681,15 +759,25 @@ export function listarValoresHora(ano_letivo) {
 
 // ─── Financeiro ───────────────────────────────────────────────────────────────
 
-export function calcularFinanceiroMensal(ano, mes) {
+// Constrói filtro SQL para limitar disciplinas por modo (UFCD vs UC).
+// Devolve um fragmento SQL pronto para ser appended ou string vazia se 'todos'.
+function filtroDisciplinaPorModo(modo, prefixoTabela = 'd') {
+  if (modo === 'formacao') return ` AND ${prefixoTabela}.tipo = 'UFCD'`
+  if (modo === 'ensino') return ` AND (${prefixoTabela}.tipo IS NULL OR ${prefixoTabela}.tipo != 'UFCD')`
+  return ''
+}
+
+export function calcularFinanceiroMensal(ano, mes, modo = 'todos', incluirComponenteVariavel = false) {
   const db = getDb()
   const mesStr = `${ano}-${String(mes).padStart(2, '0')}`
 
+  const filtroAulas = filtroDisciplinaPorModo(modo)
   const aulas = db.prepare(`
     SELECT a.*, t.disciplina_id, t.designacao as turma_nome
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
-    WHERE strftime('%Y-%m', a.data) = ? AND a.estado != 'Cancelada'
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE strftime('%Y-%m', a.data) = ? AND a.estado != 'Cancelada'${filtroAulas}
   `).all(mesStr)
 
   const configFiscal = db.prepare('SELECT * FROM config_fiscal WHERE ano = ?').get(ano)
@@ -707,14 +795,12 @@ export function calcularFinanceiroMensal(ano, mes) {
       LIMIT 1
     `).get(aula.disciplina_id, aula.turma_id)?.valor_hora
 
-    // 2. Fallback: taxa do curso a que a disciplina pertence
-    if (valorHora == null) {
-      const disc = db.prepare('SELECT curso_id FROM disciplinas WHERE id = ?').get(aula.disciplina_id)
-      if (disc?.curso_id) {
-        const curso = db.prepare('SELECT valor_hora FROM cursos WHERE id = ?').get(disc.curso_id)
-        valorHora = curso?.valor_hora
-      }
-    }
+    // 2. Fallback: taxa do curso + dados da componente variável
+    const disc = db.prepare('SELECT curso_id FROM disciplinas WHERE id = ?').get(aula.disciplina_id)
+    const curso = disc?.curso_id
+      ? db.prepare('SELECT valor_hora, tem_componente_variavel, valor_hora_variavel, taxa_padrao, nome FROM cursos WHERE id = ?').get(disc.curso_id)
+      : null
+    if (valorHora == null) valorHora = curso?.valor_hora
 
     if (valorHora == null) continue
 
@@ -723,22 +809,40 @@ export function calcularFinanceiroMensal(ano, mes) {
     const horas = (parseInt(fim[0]) * 60 + parseInt(fim[1]) - parseInt(inicio[0]) * 60 - parseInt(inicio[1])) / 60
 
     if (!porDisciplina[aula.disciplina_id]) {
-      const disc = db.prepare(`
+      const discInfo = db.prepare(`
         SELECT d.nome, d.curso_id, c.nome as curso_nome
         FROM disciplinas d LEFT JOIN cursos c ON c.id = d.curso_id WHERE d.id = ?
       `).get(aula.disciplina_id)
       porDisciplina[aula.disciplina_id] = {
         disciplina_id: aula.disciplina_id,
-        disciplina_nome: disc?.nome || 'Desconhecida',
-        curso_nome: disc?.curso_nome || null,
+        disciplina_nome: discInfo?.nome || 'Desconhecida',
+        curso_nome: discInfo?.curso_nome || null,
         total_horas: 0,
         valor_hora: valorHora,
-        valor_bruto: 0
+        valor_bruto: 0,
+        // Componente variável (Aprendizagem+): só somada se `incluirComponenteVariavel` e o curso a tem
+        tem_componente_variavel: !!curso?.tem_componente_variavel,
+        valor_hora_variavel: curso?.valor_hora_variavel || 0,
+        taxa_padrao: curso?.taxa_padrao || 82,
+        valor_variavel_potencial: 0,
       }
     }
 
-    porDisciplina[aula.disciplina_id].total_horas += horas
-    porDisciplina[aula.disciplina_id].valor_bruto += horas * valorHora
+    const linha = porDisciplina[aula.disciplina_id]
+    linha.total_horas += horas
+    linha.valor_bruto += horas * valorHora
+    if (linha.tem_componente_variavel && linha.valor_hora_variavel > 0) {
+      linha.valor_variavel_potencial += horas * linha.valor_hora_variavel
+    }
+  }
+
+  // Aplicar componente variável ao valor_bruto consoante o toggle
+  let total_variavel = 0
+  for (const linha of Object.values(porDisciplina)) {
+    if (incluirComponenteVariavel && linha.tem_componente_variavel) {
+      linha.valor_bruto += linha.valor_variavel_potencial
+      total_variavel += linha.valor_variavel_potencial
+    }
   }
 
   // Outros rendimentos do mês
@@ -756,6 +860,9 @@ export function calcularFinanceiroMensal(ano, mes) {
   const total_liquido = total_com_iva - total_irs
   const total_horas = itens.reduce((s, i) => s + i.total_horas, 0)
 
+  // Soma do potencial da componente variável (esteja ou não incluída no total)
+  const total_variavel_potencial = itens.reduce((s, i) => s + (i.valor_variavel_potencial || 0), 0)
+
   return {
     mes: mesStr,
     itens,
@@ -768,14 +875,17 @@ export function calcularFinanceiroMensal(ano, mes) {
     total_com_iva,
     taxa_irs,
     total_irs,
-    total_liquido
+    total_liquido,
+    componente_variavel_incluida: !!incluirComponenteVariavel,
+    total_variavel_potencial,
+    total_variavel_aplicado: total_variavel,
   }
 }
 
-export function calcularFinanceiroAnual(ano) {
+export function calcularFinanceiroAnual(ano, modo = 'todos', incluirComponenteVariavel = false) {
   const meses = []
   for (let m = 1; m <= 12; m++) {
-    meses.push(calcularFinanceiroMensal(ano, m))
+    meses.push(calcularFinanceiroMensal(ano, m, modo, incluirComponenteVariavel))
   }
   return meses
 }
@@ -925,18 +1035,16 @@ export function eliminarPeriodoNaoLetivo(id) {
 
 export function buscarAvaliacoesAmanha() {
   const db = getDb()
-  const amanha = new Date()
-  amanha.setDate(amanha.getDate() + 1)
-  const data = `${amanha.getFullYear()}-${String(amanha.getMonth()+1).padStart(2,'0')}-${String(amanha.getDate()).padStart(2,'0')}`
   return db.prepare(`
     SELECT a.data_avaliacao, a.topico, a.hora_inicio, a.hora_fim,
            t.designacao as turma_nome, d.nome as disciplina_nome
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
-    WHERE a.data_avaliacao = ?
+    WHERE a.data_avaliacao = date('now', '+1 day')
+      AND a.estado != 'Cancelada'
     ORDER BY a.hora_inicio
-  `).all(data)
+  `).all()
 }
 
 // ─── Pesquisa Global ──────────────────────────────────────────────────────────
@@ -944,7 +1052,8 @@ export function buscarAvaliacoesAmanha() {
 export function pesquisarGlobal(query) {
   const db = getDb()
   if (!query || query.trim().length < 2) return { aulas: [], turmas: [], disciplinas: [] }
-  const q = `%${query.trim()}%`
+  // Normaliza a query (lowercase + sem acentos) e usa a função SQL `normalizar` registada em db.js
+  const q = `%${(query || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()}%`
 
   const aulas = db.prepare(`
     SELECT a.id, a.data, a.hora_inicio, a.hora_fim, a.topico, a.estado,
@@ -952,7 +1061,8 @@ export function pesquisarGlobal(query) {
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
-    WHERE a.topico LIKE ? OR t.designacao LIKE ? OR d.nome LIKE ? OR a.data LIKE ?
+    WHERE normalizar(a.topico) LIKE ? OR normalizar(t.designacao) LIKE ?
+       OR normalizar(d.nome) LIKE ? OR a.data LIKE ?
     ORDER BY a.data DESC LIMIT 8
   `).all(q, q, q, q)
 
@@ -960,14 +1070,14 @@ export function pesquisarGlobal(query) {
     SELECT t.id, t.designacao, t.cor, t.ano_letivo, d.nome as disciplina_nome
     FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
-    WHERE t.designacao LIKE ? OR d.nome LIKE ?
+    WHERE normalizar(t.designacao) LIKE ? OR normalizar(d.nome) LIKE ?
     LIMIT 5
   `).all(q, q)
 
   const disciplinas = db.prepare(`
     SELECT id, nome, codigo, carga_horaria
     FROM disciplinas
-    WHERE nome LIKE ? OR codigo LIKE ?
+    WHERE normalizar(nome) LIKE ? OR normalizar(codigo) LIKE ?
     LIMIT 5
   `).all(q, q)
 
@@ -976,31 +1086,37 @@ export function pesquisarGlobal(query) {
 
 // ─── Estatísticas ─────────────────────────────────────────────────────────────
 
-export function obterEstatisticas(ano_letivo) {
+export function obterEstatisticas(ano_letivo, modo = 'todos') {
   const db = getDb()
 
   const anoAtual = ano_letivo || new Date().getFullYear()
   const [anoInicio] = String(anoAtual).split('/')
   const ano = String(anoInicio)
 
+  const filtro = filtroDisciplinaPorModo(modo)
+  // Para a query porEstado/evolucaoMensal/porDiaSemana (sem alias) usamos o JOIN explícito
+  const filtroComJoin = filtroDisciplinaPorModo(modo)
+
   // Estado virtual: Adiada/Cancelada têm precedência; senão data passada=Realizada, futura=Planeada
   const estadoVirtual = `
     CASE
-      WHEN estado IN ('Adiada','Cancelada') THEN estado
-      WHEN data <= date('now') THEN 'Realizada'
+      WHEN a.estado IN ('Adiada','Cancelada') THEN a.estado
+      WHEN a.data <= date('now') THEN 'Realizada'
       ELSE 'Planeada'
     END
   `
-  const duracaoMin = `(
-    CAST(substr(hora_fim,1,2) AS INTEGER)*60 + CAST(substr(hora_fim,4,2) AS INTEGER) -
-    CAST(substr(hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(hora_inicio,4,2) AS INTEGER)
+  const duracaoMinA = `(
+    CAST(substr(a.hora_fim,1,2) AS INTEGER)*60 + CAST(substr(a.hora_fim,4,2) AS INTEGER) -
+    CAST(substr(a.hora_inicio,1,2) AS INTEGER)*60 - CAST(substr(a.hora_inicio,4,2) AS INTEGER)
   )`
 
   // Aulas por estado (com lógica automática)
   const porEstado = db.prepare(`
     SELECT ${estadoVirtual} as estado, COUNT(*) as total
-    FROM aulas
-    WHERE strftime('%Y', data) = ?
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE strftime('%Y', a.data) = ?${filtroComJoin}
     GROUP BY 1
   `).all(ano)
 
@@ -1008,22 +1124,24 @@ export function obterEstatisticas(ano_letivo) {
   const porDisciplina = db.prepare(`
     SELECT d.nome as disciplina_nome,
            COUNT(a.id) as total_aulas,
-           SUM(${duracaoMin} / 60.0) as total_horas
+           SUM(${duracaoMinA} / 60.0) as total_horas
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
     JOIN disciplinas d ON d.id = t.disciplina_id
-    WHERE strftime('%Y', a.data) = ? AND a.estado != 'Cancelada'
+    WHERE strftime('%Y', a.data) = ? AND a.estado != 'Cancelada'${filtro}
     GROUP BY d.id
     ORDER BY total_horas DESC
   `).all(ano)
 
   // Evolução mensal
   const evolucaoMensal = db.prepare(`
-    SELECT strftime('%Y-%m', data) as mes,
+    SELECT strftime('%Y-%m', a.data) as mes,
            COUNT(*) as total_aulas,
-           SUM(${duracaoMin} / 60.0) as total_horas
-    FROM aulas
-    WHERE strftime('%Y', data) = ? AND estado != 'Cancelada'
+           SUM(${duracaoMinA} / 60.0) as total_horas
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE strftime('%Y', a.data) = ? AND a.estado != 'Cancelada'${filtro}
     GROUP BY mes ORDER BY mes
   `).all(ano)
 
@@ -1035,14 +1153,15 @@ export function obterEstatisticas(ano_letivo) {
            t.carga_horaria,
            COUNT(a.id) as total_aulas,
            COALESCE(SUM(CASE WHEN a.estado != 'Cancelada' AND a.data <= date('now')
-             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_dadas,
+             THEN ${duracaoMinA} / 60.0 ELSE 0 END), 0) as horas_dadas,
            COALESCE(SUM(CASE WHEN a.estado != 'Cancelada'
-             THEN ${duracaoMin} / 60.0 ELSE 0 END), 0) as horas_total
+             THEN ${duracaoMinA} / 60.0 ELSE 0 END), 0) as horas_total
     FROM turmas t
     JOIN disciplinas d ON d.id = t.disciplina_id
     LEFT JOIN cursos c ON c.id = d.curso_id
     LEFT JOIN instituicoes i ON i.id = c.instituicao_id
     LEFT JOIN aulas a ON a.turma_id = t.id AND strftime('%Y', a.data) = ?
+    WHERE 1=1${filtro}
     GROUP BY t.id
     HAVING horas_total > 0
     ORDER BY horas_dadas DESC
@@ -1050,13 +1169,15 @@ export function obterEstatisticas(ano_letivo) {
 
   // Distribuição por dia da semana (aulas já realizadas)
   const porDiaSemana = db.prepare(`
-    SELECT CAST(strftime('%w', data) AS INTEGER) as dia,
+    SELECT CAST(strftime('%w', a.data) AS INTEGER) as dia,
            COUNT(*) as total_aulas,
-           SUM(${duracaoMin} / 60.0) as total_horas
-    FROM aulas
-    WHERE strftime('%Y', data) = ?
-      AND estado NOT IN ('Cancelada','Adiada')
-      AND data <= date('now')
+           SUM(${duracaoMinA} / 60.0) as total_horas
+    FROM aulas a
+    JOIN turmas t ON t.id = a.turma_id
+    JOIN disciplinas d ON d.id = t.disciplina_id
+    WHERE strftime('%Y', a.data) = ?
+      AND a.estado NOT IN ('Cancelada','Adiada')
+      AND a.data <= date('now')${filtro}
     GROUP BY dia ORDER BY dia
   `).all(ano)
 
@@ -1065,13 +1186,15 @@ export function obterEstatisticas(ano_letivo) {
   const adiadas = porEstado.find(r => r.estado === 'Adiada')?.total || 0
   const canceladas = porEstado.find(r => r.estado === 'Cancelada')?.total || 0
   const totalHoras = porDisciplina.reduce((s, d) => s + (d.total_horas || 0), 0)
-  const taxaConclusao = (realizadas + adiadas + canceladas) > 0
-    ? (realizadas / (totalAulas) * 100).toFixed(1) : 0
+  // Taxa de conclusão: % de aulas que efectivamente decorreram, entre as que já passaram
+  const aulasPassadas = realizadas + adiadas + canceladas
+  const taxaConclusao = aulasPassadas > 0
+    ? (realizadas / aulasPassadas * 100).toFixed(1) : 0
 
-  // Rendimento mensal por instituição
+  // Rendimento mensal por instituição (inclui "Outros" para outros_rendimentos)
   const rendimentoMensal = []
   for (let m = 1; m <= 12; m++) {
-    const fin = calcularFinanceiroMensal(parseInt(ano), m)
+    const fin = calcularFinanceiroMensal(parseInt(ano), m, modo)
     if (fin.total_bruto === 0 && fin.total_outros_bruto === 0) continue
     const porInstituicao = {}
     for (const item of fin.itens) {
@@ -1082,7 +1205,12 @@ export function obterEstatisticas(ano_letivo) {
         const curso = db.prepare('SELECT i.nome FROM cursos c LEFT JOIN instituicoes i ON i.id = c.instituicao_id WHERE c.id = ?').get(disc.curso_id)
         if (curso?.nome) instNome = curso.nome
       }
-      porInstituicao[instNome] = (porInstituicao[instNome] || 0) + item.valor_bruto - item.valor_bruto * fin.taxa_irs
+      // Valor líquido = bruto - IRS (IVA é entregue ao Estado, não é rendimento próprio)
+      porInstituicao[instNome] = (porInstituicao[instNome] || 0) + item.valor_bruto * (1 - fin.taxa_irs)
+    }
+    // Incluir "outros rendimentos" como bucket separado para o total bater certo com total_liquido
+    if (fin.total_outros_bruto > 0) {
+      porInstituicao['Outros'] = fin.total_outros_bruto * (1 - fin.taxa_irs)
     }
     rendimentoMensal.push({ mes: fin.mes, porInstituicao, total_liquido: fin.total_liquido })
   }
@@ -1159,7 +1287,8 @@ export function obterDashboardStats() {
   // Aulas de hoje
   const aulasHoje = db.prepare(`
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
-           d.nome as disciplina_nome, COALESCE(a.sala, h.sala) as sala,
+           d.nome as disciplina_nome, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, COALESCE(a.sala, h.sala) as sala,
            COALESCE(i.nome, 'Sem instituição') as instituicao_nome
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
@@ -1178,7 +1307,8 @@ export function obterDashboardStats() {
   // Aulas de amanhã
   const aulasAmanha = db.prepare(`
     SELECT a.*, t.designacao as turma_nome, t.cor as turma_cor,
-           d.nome as disciplina_nome, COALESCE(a.sala, h.sala) as sala,
+           d.nome as disciplina_nome, d.tipo as disciplina_tipo,
+           c.nome as curso_nome, COALESCE(a.sala, h.sala) as sala,
            COALESCE(i.nome, 'Sem instituição') as instituicao_nome
     FROM aulas a
     JOIN turmas t ON t.id = a.turma_id
@@ -1208,11 +1338,12 @@ export function obterDashboardStats() {
     ORDER BY a.data_avaliacao
   `).all()
 
-  // Horas esta semana (seg-dom)
+  // Horas esta semana (Seg–Dom da semana corrente)
+  // `weekday 0` → próximo domingo (ou hoje se for domingo). `-6 days` → segunda dessa mesma semana.
   const horasSemana = db.prepare(`
     SELECT COALESCE(SUM(${duracaoMin} / 60.0), 0) as total
     FROM aulas a
-    WHERE a.data BETWEEN date('now', 'weekday 1', '-7 days') AND date('now', 'weekday 0')
+    WHERE a.data BETWEEN date('now', 'weekday 0', '-6 days') AND date('now', 'weekday 0')
       AND a.estado NOT IN ('Cancelada')
   `).get()?.total || 0
 
@@ -1256,5 +1387,13 @@ export function obterDashboardStats() {
       AND (topico IS NULL OR topico = '')
   `).get()?.total || 0
 
-  return { aulasHoje, aulasAmanha, avaliacoes, horasSemana, horasMesInst, turmasTerminar, semPreparar }
+  // Aulas realizadas sem sumário registado (últimas 4 semanas)
+  const semSumario = db.prepare(`
+    SELECT COUNT(*) as total FROM aulas
+    WHERE data BETWEEN date('now', '-28 days') AND date('now')
+      AND estado = 'Realizada'
+      AND (sumario IS NULL OR sumario = '')
+  `).get()?.total || 0
+
+  return { aulasHoje, aulasAmanha, avaliacoes, horasSemana, horasMesInst, turmasTerminar, semPreparar, semSumario }
 }

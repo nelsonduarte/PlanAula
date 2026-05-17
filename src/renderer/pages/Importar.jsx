@@ -21,6 +21,29 @@ function addSheet(wb, name, data, colWidths) {
   return ws
 }
 
+// Folhas opcionais comuns aos dois templates (fiscalidade, rendimentos extra, feriados pessoais, cargos)
+function addFolhasOpcionais(wb) {
+  addSheet(wb, 'Config Fiscal', [
+    ['ano *', 'taxa_iva', 'isento_iva', 'taxa_retencao_irs', 'sem_retencao', 'notas'],
+    [2025, 0.23, 0, 0.25, 0, ''],
+    [2026, 0.23, 0, 0.25, 0, ''],
+  ], [8, 10, 12, 18, 14, 30])
+  addSheet(wb, 'Outros Rendimentos', [
+    ['descricao *', 'valor *', 'data *', 'tipo', 'notas'],
+    ['Orientação estágio Maria Silva', 250, '2025-11-15', 'Orientação de Estágio', ''],
+    ['Avaliação júri tese', 80, '2025-12-03', 'Avaliação/Júri', ''],
+  ], [35, 10, 12, 22, 30])
+  addSheet(wb, 'Feriados Pessoais', [
+    ['data *', 'descricao *', 'tipo'],
+    ['2025-09-08', 'Feriado municipal', 'feriado'],
+    ['2025-12-24', 'Véspera de Natal', 'outro'],
+  ], [12, 30, 12])
+  addSheet(wb, 'Cargos', [
+    ['instituicao_nome *', 'departamento', 'cargo', 'ativo'],
+    ['Universidade do Porto', 'Departamento de Informática', 'Professor Auxiliar', 1],
+  ], [35, 30, 25, 8])
+}
+
 async function saveWorkbook(wb, filename) {
   const buf = await wb.xlsx.writeBuffer()
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -82,16 +105,16 @@ function gerarTemplate() {
     ['Verão', '2026-07-01', '2026-09-14', 'férias', 'Universidade do Porto'],
   ], [25, 13, 13, 12, 35])
   addSheet(wb, 'Cursos', [
-    ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'descricao'],
-    ['Engenharia Informática', 'Universidade do Porto', 'semestral', '2025/2026', ''],
-    ['Gestão e Administração', 'Instituto Politécnico de Coimbra', 'semestral', '2025/2026', ''],
-  ], [30, 35, 12, 12, 30])
+    ['nome *', 'instituicao_nome *', 'tipo', 'ano_letivo', 'valor_hora', 'descricao'],
+    ['Engenharia Informática', 'Universidade do Porto', 'semestral', '2025/2026', 30, ''],
+    ['Gestão e Administração', 'Instituto Politécnico de Coimbra', 'semestral', '2025/2026', 25, ''],
+  ], [30, 35, 12, 12, 10, 30])
   addSheet(wb, 'Disciplinas', [
-    ['nome *', 'codigo', 'tipo', 'area_cientifica', 'ects', 'descricao', 'curso_nome *'],
-    ['Programação Web', 'PW101', 'Teórica', 'Informática', 6, '', 'Engenharia Informática'],
-    ['Bases de Dados', 'BD102', 'Teórico-Prática', 'Informática', 4, '', 'Engenharia Informática'],
-    ['Gestão de Projetos', 'GP201', 'Seminário', 'Gestão', 3, '', 'Gestão e Administração'],
-  ], [25, 10, 18, 18, 6, 20, 28])
+    ['nome *', 'codigo', 'tipo', 'carga_horaria', 'area_cientifica', 'ects', 'descricao', 'curso_nome *'],
+    ['Programação Web', 'PW101', 'UC', 60, 'Informática', 6, '', 'Engenharia Informática'],
+    ['Bases de Dados', 'BD102', 'UC', 45, 'Informática', 4, '', 'Engenharia Informática'],
+    ['Gestão de Projetos', 'GP201', 'UC', 30, 'Gestão', 3, '', 'Gestão e Administração'],
+  ], [25, 10, 12, 14, 18, 6, 20, 28])
   addSheet(wb, 'Módulos', [
     ['disciplina_nome *', 'nome *', 'ordem', 'horas', 'objetivos'],
     ['Programação Web', 'HTML e CSS', 1, 10, 'Construir páginas web estáticas'],
@@ -101,11 +124,11 @@ function gerarTemplate() {
     ['Bases de Dados', 'SQL', 2, 20, 'Consultas e manipulação de dados'],
   ], [25, 25, 8, 8, 40])
   addSheet(wb, 'Turmas', [
-    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre', 'cor', 'valor_hora'],
-    ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1, '#2E86C1', 30],
-    ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2, '#27AE60', 30],
-    ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1, '#8E44AD', 25],
-  ], [18, 25, 12, 14, 13, 13, 10, 10, 12])
+    ['designacao *', 'disciplina_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'semestre', 'sala', 'cor', 'valor_hora'],
+    ['Turma A', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 1, 'Sala 101', '#2E86C1', 30],
+    ['Turma B', 'Programação Web', '2025/2026', 60, '2025-09-15', '2026-01-31', 2, 'Sala 203', '#27AE60', 30],
+    ['Turma A', 'Bases de Dados', '2025/2026', 45, '2025-09-15', '2026-01-31', 1, 'Sala 205', '#8E44AD', 25],
+  ], [18, 25, 12, 14, 13, 13, 10, 12, 10, 12])
   addSheet(wb, 'Horários', [
     ['turma_designacao *', 'disciplina_nome *', 'dia_semana *', 'hora_inicio *', 'hora_fim *', 'sala'],
     ['Turma A', 'Programação Web', 2, '09:00', '11:00', 'Sala 101'],
@@ -114,6 +137,7 @@ function gerarTemplate() {
     ['Turma A', 'Bases de Dados', 5, '09:00', '11:00', 'Sala 205'],
   ], [20, 25, 14, 13, 13, 15])
 
+  addFolhasOpcionais(wb)
   saveWorkbook(wb, 'PlanAula_Template.xlsx')
 }
 
@@ -162,21 +186,22 @@ function gerarTemplateFormacao() {
     ['Programação em C/C++', '0651', 50, '', 'EFA - Técnico de Informática'],
   ], [30, 10, 14, 30, 30])
   addSheet(wb, 'Turmas', [
-    ['designacao *', 'ufcd_nome *', 'ano *', 'carga_horaria', 'data_inicio', 'data_fim', 'cor', 'valor_hora'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '2026', 25, '2026-04-15', '2026-05-15', '#E74C3C', 18],
-    ['Turma EFA-T1', 'Introdução às bases de dados', '2026', 25, '2026-05-16', '2026-06-15', '#3498DB', 18],
-    ['Turma EFA-T1', 'Programação em C/C++', '2026', 50, '2026-06-16', '2026-08-15', '#2ECC71', 18],
-  ], [18, 30, 12, 14, 13, 13, 10, 12])
+    ['designacao *', 'ufcd_nome *', 'ano_letivo *', 'carga_horaria', 'data_inicio', 'data_fim', 'sala', 'cor', 'valor_hora'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '2026', 25, '2026-04-15', '2026-05-15', 'Sala 3', '#E74C3C', 18],
+    ['Turma EFA-T1', 'Introdução às bases de dados', '2026', 25, '2026-05-16', '2026-06-15', 'Sala 3', '#3498DB', 18],
+    ['Turma EFA-T1', 'Programação em C/C++', '2026', 50, '2026-06-16', '2026-08-15', 'Sala 3', '#2ECC71', 18],
+  ], [18, 30, 12, 14, 13, 13, 12, 10, 12])
   addSheet(wb, 'Sessões', [
-    ['turma_designacao *', 'ufcd_nome *', 'data *', 'hora_inicio *', 'hora_fim *', 'sala'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '15-04-2026', '09:00', '13:00', 'Sala 3'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '16-04-2026', '14:00', '17:00', 'Sala 3'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '22-04-2026', '09:00', '13:00', 'Sala 3'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '23-04-2026', '14:00', '17:00', 'Sala 3'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '29-04-2026', '09:00', '13:00', 'Sala 3'],
-    ['Turma EFA-T1', 'Estrutura de um programa', '30-04-2026', '14:00', '18:00', 'Sala 3'],
-  ], [20, 30, 13, 13, 13, 15])
+    ['turma_designacao *', 'ufcd_nome *', 'data *', 'hora_inicio *', 'hora_fim *', 'sala', 'topico'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '15-04-2026', '09:00', '13:00', 'Sala 3', 'Apresentação do programa'],
+    ['Turma EFA-T1', 'Estrutura de um programa', '16-04-2026', '14:00', '17:00', 'Sala 3', ''],
+    ['Turma EFA-T1', 'Estrutura de um programa', '22-04-2026', '09:00', '13:00', 'Sala 3', ''],
+    ['Turma EFA-T1', 'Estrutura de um programa', '23-04-2026', '14:00', '17:00', 'Sala 3', ''],
+    ['Turma EFA-T1', 'Estrutura de um programa', '29-04-2026', '09:00', '13:00', 'Sala 3', ''],
+    ['Turma EFA-T1', 'Estrutura de um programa', '30-04-2026', '14:00', '18:00', 'Sala 3', ''],
+  ], [20, 30, 13, 13, 13, 12, 30])
 
+  addFolhasOpcionais(wb)
   saveWorkbook(wb, 'PlanAula_Template_Formacao.xlsx')
 }
 
@@ -254,6 +279,61 @@ function normTime(row, key, def = '09:00') {
 
 // ─── Import Logic ─────────────────────────────────────────────────────────────
 
+// Importa folhas opcionais independentes (Feriados Pessoais, Outros Rendimentos).
+// Chamada no fim de ambos os caminhos (formação/ensino) para garantir que são processadas.
+async function importarFolhasOpcionaisFinais(wb, info, ok, err) {
+  // ── Feriados Pessoais (dias_nao_letivos individuais) ──
+  const rowsFP = parseSheet(wb, 'Feriados Pessoais')
+  if (rowsFP.length > 0) {
+    info('A importar Feriados Pessoais…')
+    const feriadosExist = await ipc(() => window.api.diasNaoLetivos.listar())
+    for (const row of rowsFP) {
+      const data = normDate(row, 'data')
+      const descricao = norm(row, 'descricao')
+      if (!data || !descricao) continue
+      if (feriadosExist.find(f => f.data === data)) {
+        ok(`Feriado já existe: ${data} — ${descricao}`)
+        continue
+      }
+      try {
+        await ipc(() => window.api.diasNaoLetivos.criar({
+          data,
+          descricao,
+          tipo: norm(row, 'tipo') || 'feriado',
+        }))
+        ok(`Feriado criado: ${data} — ${descricao}`)
+      } catch (e) { err(`Feriado "${descricao}": ${e.message}`) }
+    }
+  }
+
+  // ── Outros Rendimentos ──
+  const rowsOR = parseSheet(wb, 'Outros Rendimentos')
+  if (rowsOR.length > 0) {
+    info('A importar Outros Rendimentos…')
+    const rendExist = await ipc(() => window.api.outrosRendimentos.listar())
+    for (const row of rowsOR) {
+      const descricao = norm(row, 'descricao')
+      const data = normDate(row, 'data')
+      const valor = Number(norm(row, 'valor')) || 0
+      if (!descricao || !data || !valor) continue
+      if (rendExist.find(r => r.descricao === descricao && r.data === data && Math.abs(r.valor - valor) < 0.01)) {
+        ok(`Rendimento já existe: ${descricao} (${data})`)
+        continue
+      }
+      try {
+        await ipc(() => window.api.outrosRendimentos.criar({
+          descricao,
+          valor,
+          data,
+          tipo: norm(row, 'tipo') || 'Outro',
+          notas: norm(row, 'notas') || null,
+        }))
+        ok(`Rendimento criado: ${descricao} (${data}) — ${valor}€`)
+      } catch (e) { err(`Rendimento "${descricao}": ${e.message}`) }
+    }
+  }
+}
+
 async function importarWorkbook(wb, setProgresso) {
   const log = []
   const erros = []
@@ -302,6 +382,55 @@ async function importarWorkbook(wb, setProgresso) {
   }
   instituicoes = await ipc(() => window.api.instituicoes.listar())
 
+  // ── Cargos do Professor ──
+  const rowsCargos = parseSheet(wb, 'Cargos')
+  if (rowsCargos.length > 0) {
+    info('A importar Cargos…')
+    const cargosExist = await ipc(() => window.api.professorCargos.listar())
+    for (const row of rowsCargos) {
+      const instNome = norm(row, 'instituicao_nome')
+      if (!instNome) continue
+      const cargo = norm(row, 'cargo') || null
+      const departamento = norm(row, 'departamento') || null
+      if (cargosExist.find(c => c.instituicao_nome === instNome && c.cargo === cargo && c.departamento === departamento)) {
+        ok(`Cargo já existe: ${instNome}${cargo ? ` — ${cargo}` : ''}`)
+        continue
+      }
+      const inst = instituicoes.find(i => i.nome === instNome)
+      try {
+        await ipc(() => window.api.professorCargos.criar({
+          instituicao_id: inst?.id || null,
+          instituicao_nome: instNome,
+          departamento,
+          cargo,
+          ativo: normNum(row, 'ativo', 1) ? 1 : 0,
+        }))
+        ok(`Cargo criado: ${instNome}${cargo ? ` — ${cargo}` : ''}`)
+      } catch (e) { err(`Cargo "${instNome}": ${e.message}`) }
+    }
+  }
+
+  // ── Config Fiscal ──
+  const rowsCF = parseSheet(wb, 'Config Fiscal')
+  if (rowsCF.length > 0) {
+    info('A importar Config Fiscal…')
+    for (const row of rowsCF) {
+      const ano = normNum(row, 'ano', 0)
+      if (!ano) continue
+      try {
+        await ipc(() => window.api.financeiro.salvarConfig({
+          ano,
+          taxa_iva: Number(norm(row, 'taxa_iva')) || 0,
+          isento_iva: normNum(row, 'isento_iva', 0) ? 1 : 0,
+          taxa_retencao_irs: Number(norm(row, 'taxa_retencao_irs')) || 0,
+          sem_retencao: normNum(row, 'sem_retencao', 0) ? 1 : 0,
+          notas: norm(row, 'notas') || null,
+        }))
+        ok(`Config fiscal guardada: ${ano}`)
+      } catch (e) { err(`Config fiscal ${ano}: ${e.message}`) }
+    }
+  }
+
   // ── Períodos Não Letivos ──
   info('A importar Períodos Não Letivos…')
   const rowsPNL = parseSheet(wb, 'Períodos Não Letivos')
@@ -347,12 +476,13 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
+      const valorHoraCurso = normNum(row, 'valor_hora', 0)
       await ipc(() => window.api.cursos.criar({
         nome,
         instituicao_id: inst?.id || null,
         tipo: norm(row, 'tipo') || 'semestral',
         ano_letivo: norm(row, 'ano_letivo') || null,
-        valor_hora: null,
+        valor_hora: valorHoraCurso || null,
         descricao: norm(row, 'descricao') || null,
         ativo: 1,
       }))
@@ -380,12 +510,12 @@ async function importarWorkbook(wb, setProgresso) {
     }
     try {
       // leitura directa como fallback ao norm (headers sem asterisco)
-      const tipo = norm(row, 'tipo') || row['tipo'] || 'Teórica'
+      const tipo = norm(row, 'tipo') || row['tipo'] || 'UC'
       await ipc(() => window.api.disciplinas.criar({
         nome,
         codigo: norm(row, 'codigo') || null,
         area_cientifica: norm(row, 'area_cientifica') || '',
-        carga_horaria: 0,
+        carga_horaria: normNum(row, 'carga_horaria', 0),
         ects: normNum(row, 'ects'),
         tipo,
         descricao: norm(row, 'descricao') || null,
@@ -494,12 +624,14 @@ async function importarWorkbook(wb, setProgresso) {
       continue
     }
     try {
+      // UFCD não tem semestre; nas restantes, manter o valor da folha (null se vazio)
+      const isUFCD = disc.tipo === 'UFCD'
       const turmaCreated = await ipc(() => window.api.turmas.criar({
         designacao,
         disciplina_id: disc.id,
         ano_letivo: anoLetivo,
-        semestre: norm(row, 'semestre') ? normNum(row, 'semestre', null) : null,
-        sala: null,
+        semestre: isUFCD ? null : (norm(row, 'semestre') ? normNum(row, 'semestre', null) : null),
+        sala: norm(row, 'sala') || null,
         data_inicio: normDate(row, 'data_inicio') || null,
         data_fim: normDate(row, 'data_fim') || null,
         carga_horaria: normNum(row, 'carga_horaria', 0),
@@ -568,7 +700,7 @@ async function importarWorkbook(wb, setProgresso) {
       try {
         await ipc(() => window.api.aulas.criar({
           turma_id: turma.id, modulo_id: null, data, hora_inicio: horaInicio, hora_fim: horaFim,
-          topico: '', objetivos: null, conteudos: null, atividades: null, recursos: null,
+          topico: norm(row, 'topico') || '', objetivos: null, conteudos: null, atividades: null, recursos: null,
           avaliacao: null, notas: null, estado: 'Planeada', data_avaliacao: null, sala,
         }))
         totalSessoes++
@@ -579,6 +711,7 @@ async function importarWorkbook(wb, setProgresso) {
     }
     if (totalSessoes > 0) ok(`${totalSessoes} sessões criadas — ${totalHoras.toFixed(1)}h total`)
 
+    await importarFolhasOpcionaisFinais(wb, info, ok, err)
     return { log, erros }
   }
 
@@ -728,6 +861,7 @@ async function importarWorkbook(wb, setProgresso) {
   }
   if (totalAulasGeradas > 0) ok(`Total de aulas geradas: ${totalAulasGeradas}`)
 
+  await importarFolhasOpcionaisFinais(wb, info, ok, err)
   return { log, erros }
 }
 
@@ -843,16 +977,18 @@ export default function Importar() {
 
       {/* Template structure info */}
       <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Estrutura do Template</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Estrutura dos Templates</h3>
+
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Ensino superior (com horários semanais)</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-4">
           {[
             { sheet: 'Configurações', campos: 'nome_professor, instituicao, departamento, ano_letivo_atual' },
             { sheet: 'Instituições', campos: 'nome, tipo, contacto, notas' },
             { sheet: 'Períodos Não Letivos', campos: 'descricao, data_inicio, data_fim, tipo, instituicao_nome' },
-            { sheet: 'Cursos', campos: 'nome, instituicao_nome, tipo, ano_letivo, descricao' },
-            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, area_cientifica, ects, descricao, curso_nome' },
+            { sheet: 'Cursos', campos: 'nome, instituicao_nome, tipo, ano_letivo, valor_hora, descricao' },
+            { sheet: 'Disciplinas', campos: 'nome, codigo, tipo, carga_horaria, area_cientifica, ects, descricao, curso_nome' },
             { sheet: 'Módulos', campos: 'disciplina_nome, nome, ordem, horas, objetivos' },
-            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre, cor, valor_hora' },
+            { sheet: 'Turmas', campos: 'designacao, disciplina_nome, ano_letivo, carga_horaria, data_inicio, data_fim, semestre, sala, cor, valor_hora' },
             { sheet: 'Horários', campos: 'turma_designacao, disciplina_nome, dia_semana, hora_inicio, hora_fim, sala' },
           ].map(({ sheet, campos }) => (
             <div key={sheet} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
@@ -861,11 +997,46 @@ export default function Importar() {
             </div>
           ))}
         </div>
+
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Formação (sessões com data específica)</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-4">
+          {[
+            { sheet: 'Instituições', campos: 'nome, tipo, contacto, notas' },
+            { sheet: 'Cursos', campos: 'nome, instituicao_nome, tipo, ano_letivo, valor_hora, descricao' },
+            { sheet: 'UFCDs', campos: 'nome, codigo, carga_horaria, descricao, curso_nome' },
+            { sheet: 'Turmas', campos: 'designacao, ufcd_nome, ano_letivo, carga_horaria, data_inicio, data_fim, sala, cor, valor_hora' },
+            { sheet: 'Sessões', campos: 'turma_designacao, ufcd_nome, data, hora_inicio, hora_fim, sala, topico' },
+          ].map(({ sheet, campos }) => (
+            <div key={`f-${sheet}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{sheet}</p>
+              <p className="text-gray-500 dark:text-gray-400 leading-relaxed">{campos}</p>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Folhas opcionais (em ambos os templates — apaga linhas que não queiras importar)</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {[
+            { sheet: 'Config Fiscal', campos: 'ano, taxa_iva, isento_iva, taxa_retencao_irs, sem_retencao, notas' },
+            { sheet: 'Outros Rendimentos', campos: 'descricao, valor, data, tipo, notas' },
+            { sheet: 'Feriados Pessoais', campos: 'data, descricao, tipo (feriados específicos além dos nacionais)' },
+            { sheet: 'Cargos', campos: 'instituicao_nome, departamento, cargo, ativo' },
+          ].map(({ sheet, campos }) => (
+            <div key={`o-${sheet}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{sheet}</p>
+              <p className="text-gray-500 dark:text-gray-400 leading-relaxed">{campos}</p>
+            </div>
+          ))}
+        </div>
+
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
           Dias da semana: 0=Domingo · 1=Segunda · 2=Terça · 3=Quarta · 4=Quinta · 5=Sexta · 6=Sábado
         </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          Tipos de disciplina: UC · UFCD · teórica · prática · mista · laboratorial · seminarial
+        </p>
         <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
-          As aulas são geradas automaticamente após importar os horários, para turmas com data_inicio e data_fim definidas.
+          Ensino: as aulas são geradas automaticamente após importar os horários (turmas com data_inicio e data_fim). Formação: as sessões são criadas como definidas na folha Sessões.
         </p>
       </div>
 

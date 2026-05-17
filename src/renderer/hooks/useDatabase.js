@@ -192,13 +192,13 @@ export function useDatabase() {
   )
 
   // Financeiro
-  const calcularFinanceiroMensal = (ano, mes) => execute(
-    () => window.api.financeiro.calcularMensal(ano, mes),
+  const calcularFinanceiroMensal = (ano, mes, modo, incluirCV) => execute(
+    () => window.api.financeiro.calcularMensal(ano, mes, modo, incluirCV),
     { mes: `${ano}-${String(mes).padStart(2,'0')}`, itens: [], total_horas: 0, total_bruto: 0, taxa_iva: 0, total_iva: 0, total_com_iva: 0, taxa_irs: 0.25, total_irs: 0, total_liquido: 0 }
   )
 
-  const calcularFinanceiroAnual = (ano) => execute(
-    () => window.api.financeiro.calcularAnual(ano),
+  const calcularFinanceiroAnual = (ano, modo, incluirCV) => execute(
+    () => window.api.financeiro.calcularAnual(ano, modo, incluirCV),
     []
   )
 
@@ -260,8 +260,8 @@ export function useDatabase() {
   )
 
   // Estatísticas
-  const obterEstatisticas = (ano_letivo) => execute(
-    () => window.api.estatisticas.obter(ano_letivo),
+  const obterEstatisticas = (ano_letivo, modo) => execute(
+    () => window.api.estatisticas.obter(ano_letivo, modo),
     { porEstado: [], porDisciplina: [], evolucaoMensal: [], totalAulas: 0, realizadas: 0, taxaConclusao: 0 }
   )
 

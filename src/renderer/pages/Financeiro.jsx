@@ -3,6 +3,7 @@ import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useModoTrabalho } from '../hooks/useModoTrabalho.jsx'
 
 const MESES_NOMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -17,12 +18,14 @@ function formatPct(val) {
 }
 
 function hoje() {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 export default function Financeiro() {
   const db = useDatabase()
   const { confirm, alert, dialog, handleOk, handleCancel } = useDialog()
+  const { modo } = useModoTrabalho()
   const anoAtual = new Date().getFullYear()
   const mesAtual = new Date().getMonth() + 1
 
@@ -46,12 +49,15 @@ export default function Financeiro() {
   const [editandoOutro, setEditandoOutro] = useState(null)
   const [formOutro, setFormOutro] = useState({ descricao: '', valor: '', data: hoje(), tipo: 'Orientação de Estágio', notas: '' })
 
-  useEffect(() => { carregarTudo() }, [anoSelecionado, mesSelecionado])
+  // Componente variável (Aprendizagem+) — toggle manual: o user confirma que a taxa de permanência foi atingida
+  const [incluirCV, setIncluirCV] = useState(false)
+
+  useEffect(() => { carregarTudo() }, [anoSelecionado, mesSelecionado, modo, incluirCV])
 
   async function carregarTudo() {
     const [mensal, anual, config, vh, discs, ts, outros] = await Promise.all([
-      db.calcularFinanceiroMensal(anoSelecionado, mesSelecionado),
-      db.calcularFinanceiroAnual(anoSelecionado),
+      db.calcularFinanceiroMensal(anoSelecionado, mesSelecionado, modo, incluirCV),
+      db.calcularFinanceiroAnual(anoSelecionado, modo, incluirCV),
       db.obterConfigFiscal(anoSelecionado),
       db.listarValoresHora(),
       db.listarDisciplinas(),
@@ -221,6 +227,16 @@ export default function Financeiro() {
             {MESES_NOMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
           </select>
         )}
+
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none ml-auto" title="Inclui a componente variável (Aprendizagem+) quando a taxa de permanência atinge o padrão definido no curso">
+          <input
+            type="checkbox"
+            checked={incluirCV}
+            onChange={e => setIncluirCV(e.target.checked)}
+            className="rounded"
+          />
+          Incluir componente variável
+        </label>
       </div>
 
       {vista === 'mensal' && dadosMensais && (
@@ -237,6 +253,16 @@ export default function Financeiro() {
               {dadosMensais.total_outros_bruto > 0 && (
                 <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
                   incl. {formatCurrency(dadosMensais.total_outros_bruto)} outros
+                </p>
+              )}
+              {dadosMensais.total_variavel_aplicado > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                  incl. {formatCurrency(dadosMensais.total_variavel_aplicado)} variável
+                </p>
+              )}
+              {!dadosMensais.componente_variavel_incluida && dadosMensais.total_variavel_potencial > 0 && (
+                <p className="text-xs text-amber-500 dark:text-amber-400 mt-0.5 italic">
+                  + {formatCurrency(dadosMensais.total_variavel_potencial)} potencial
                 </p>
               )}
             </div>

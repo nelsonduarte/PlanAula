@@ -3,6 +3,7 @@ import Modal from '../components/Modal.jsx'
 import DialogModal from '../components/DialogModal.jsx'
 import { useDatabase } from '../hooks/useDatabase.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useModoTrabalho, itemDisciplinaTipoPassaModo } from '../hooks/useModoTrabalho.jsx'
 
 const COR_PALETTE = [
   '#2E86C1', '#27AE60', '#E74C3C', '#F39C12', '#8E44AD',
@@ -11,11 +12,18 @@ const COR_PALETTE = [
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
+// Para UFCD mostramos apenas o ano (extrai o último ano de 4 dígitos de strings tipo "2025/2026")
+function anoCurto(ano_letivo) {
+  if (!ano_letivo) return null
+  const m = String(ano_letivo).match(/\d{4}/g)
+  return m && m.length ? m[m.length - 1] : ano_letivo
+}
+
 const emptyForm = {
   disciplina_id: '',
   designacao: '',
   ano_letivo: '',
-  semestre: 1,
+  semestre: '',
   sala: '',
   cor: '#2E86C1',
   data_inicio: '',
@@ -94,10 +102,13 @@ export default function Turmas() {
       await alert('Preencha os campos obrigatórios')
       return
     }
+    const discSelecionada = disciplinas.find(d => String(d.id) === String(form.disciplina_id))
+    const isUFCD = discSelecionada?.tipo === 'UFCD'
     const dados = {
       ...form,
       disciplina_id: parseInt(form.disciplina_id),
-      semestre: parseInt(form.semestre) || 1
+      // UFCD não tem semestre; nas outras, manter o valor (null se não preenchido)
+      semestre: isUFCD ? null : (form.semestre ? parseInt(form.semestre) : null)
     }
     if (editando) {
       await db.editarTurma(editando.id, dados)
@@ -152,9 +163,10 @@ export default function Turmas() {
     setNovosHorarios(h => h.map((item, i) => i === idx ? { ...item, [campo]: valor } : item))
   }
 
+  const { modo } = useModoTrabalho()
   // Group by discipline
   const turmasFiltradas = turmas.filter(t =>
-    !filtroDisc || t.designacao === filtroDisc
+    itemDisciplinaTipoPassaModo(t, modo) && (!filtroDisc || t.designacao === filtroDisc)
   )
 
   const porDisciplina = turmasFiltradas.reduce((acc, t) => {
@@ -200,11 +212,21 @@ export default function Turmas() {
       ) : (
         <div className="space-y-6">
           {/* Turmas agrupadas (formação com várias UFCDs) */}
-          {Object.entries(porDisciplina).filter(([, g]) => g.turmas.length > 1).map(([key, grupo]) => (
+          {Object.entries(porDisciplina).filter(([, g]) => g.turmas.length > 1).map(([key, grupo]) => {
+            const cursoGrupo = grupo.turmas.find(t => t.curso_nome)?.curso_nome
+            return (
             <div key={key}>
-              <h2 className="section-title mb-3">{grupo.nome}</h2>
+              <div className="mb-3">
+                <h2 className="section-title">{grupo.nome}</h2>
+                {cursoGrupo && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{cursoGrupo}</p>}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {grupo.turmas.map(turma => (
+                {grupo.turmas.map(turma => {
+                  const ehUFCD = turma.disciplina_tipo === 'UFCD'
+                  const subtitulo = ehUFCD
+                    ? anoCurto(turma.ano_letivo)
+                    : [turma.ano_letivo, turma.semestre ? `${turma.semestre}º Sem` : null].filter(Boolean).join(' · ')
+                  return (
                   <div key={turma.id} className="card hover:shadow-md transition-shadow">
                     <div className="flex items-start gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: turma.cor }}>
@@ -212,9 +234,9 @@ export default function Turmas() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-gray-900 dark:text-white">{turma.disciplina_nome}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {turma.ano_letivo}{turma.semestre ? ` · ${turma.semestre}º Sem` : ''}
-                        </p>
+                        {subtitulo && (
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{subtitulo}</p>
+                        )}
                       </div>
                     </div>
                     {(turma.data_inicio || turma.data_fim) && (() => {
@@ -235,25 +257,31 @@ export default function Turmas() {
                       <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
-          ))}
+          )})}
 
           {/* Turmas individuais (1 UFCD/disciplina) lado a lado */}
           {Object.values(porDisciplina).some(g => g.turmas.length === 1) && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Object.values(porDisciplina).filter(g => g.turmas.length === 1).flatMap(g => g.turmas).map(turma => (
+              {Object.values(porDisciplina).filter(g => g.turmas.length === 1).flatMap(g => g.turmas).map(turma => {
+                // Evitar repetir designacao quando coincide com o nome da disciplina (típico em UFCD isolada)
+                const designacaoUtil = turma.designacao && turma.designacao !== turma.disciplina_nome ? turma.designacao : null
+                const ehUFCD = turma.disciplina_tipo === 'UFCD'
+                const anoLabel = ehUFCD ? anoCurto(turma.ano_letivo) : turma.ano_letivo
+                const semestreLabel = ehUFCD ? null : (turma.semestre ? `${turma.semestre}º Sem` : null)
+                const subtitulo = [designacaoUtil, anoLabel, semestreLabel].filter(Boolean).join(' · ')
+                return (
                 <div key={turma.id} className="card hover:shadow-md transition-shadow">
                   <div className="flex items-start gap-3 mb-3">
                     <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: turma.cor }}>
                       {turma.designacao.substring(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
+                      {turma.curso_nome && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{turma.curso_nome}</p>}
                       <h3 className="font-semibold text-gray-900 dark:text-white">{turma.disciplina_nome}</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {turma.designacao} · {turma.ano_letivo}{turma.semestre ? ` · ${turma.semestre}º Sem` : ''}
-                      </p>
+                      {subtitulo && <p className="text-sm text-gray-500 dark:text-gray-400">{subtitulo}</p>}
                     </div>
                   </div>
                   {(turma.data_inicio || turma.data_fim) && (() => {
@@ -273,7 +301,7 @@ export default function Turmas() {
                     <button onClick={() => eliminar(turma.id)} className="btn-danger text-xs py-1.5 px-3">🗑️</button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>
@@ -328,17 +356,20 @@ export default function Turmas() {
                 className="input-field"
               />
             </div>
-            <div>
-              <label className="label-field">Semestre</label>
-              <select
-                value={form.semestre}
-                onChange={e => setForm(f => ({ ...f, semestre: e.target.value }))}
-                className="input-field"
-              >
-                <option value={1}>1º Semestre</option>
-                <option value={2}>2º Semestre</option>
-              </select>
-            </div>
+            {disciplinas.find(d => String(d.id) === String(form.disciplina_id))?.tipo !== 'UFCD' && (
+              <div>
+                <label className="label-field">Semestre</label>
+                <select
+                  value={form.semestre || ''}
+                  onChange={e => setForm(f => ({ ...f, semestre: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="">Sem semestre</option>
+                  <option value={1}>1º Semestre</option>
+                  <option value={2}>2º Semestre</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="label-field">Carga Horária (h)</label>
               <input

@@ -1,5 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
+import { useModoTrabalho, useTermos } from '../hooks/useModoTrabalho.jsx'
 
 // Heroicons-style SVG icons (24px, stroke-based)
 const Icon = ({ d, d2, viewBox = '0 0 24 24' }) => (
@@ -78,7 +79,59 @@ const navItems = [
   },
 ]
 
+const MODOS = [
+  { id: 'todos', label: 'Todos', short: 'Td' },
+  { id: 'ensino', label: 'Ensino', short: 'Es' },
+  { id: 'formacao', label: 'Formação', short: 'Fo' },
+]
+
+function ModoSelector({ collapsed }) {
+  const { modo, setModo } = useModoTrabalho()
+  if (collapsed) {
+    // Versão compacta: apenas o "short" do modo atual como botão de ciclo
+    const actual = MODOS.find(m => m.id === modo) || MODOS[0]
+    const idx = MODOS.findIndex(m => m.id === modo)
+    const proximo = MODOS[(idx + 1) % MODOS.length]
+    return (
+      <button
+        onClick={() => setModo(proximo.id)}
+        className="w-full px-2 py-1.5 text-[10px] font-semibold text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
+        title={`Modo: ${actual.label} (clica para mudar)`}
+      >
+        {actual.short}
+      </button>
+    )
+  }
+  return (
+    <div className="px-3 py-3 border-b border-gray-700">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Modo</p>
+      <div className="flex gap-1 bg-gray-800 rounded-md p-0.5">
+        {MODOS.map(m => (
+          <button
+            key={m.id}
+            onClick={() => setModo(m.id)}
+            className={`flex-1 px-1 py-1 text-[11px] font-medium rounded transition-colors ${
+              modo === m.id
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Sidebar({ collapsed }) {
+  const termos = useTermos()
+  // Substitui labels dinamicamente em função do modo
+  const itemsAdaptados = navItems.map(item => {
+    if (item.to === '/disciplinas') return { ...item, label: termos.disciplinas }
+    if (item.to === '/aulas') return { ...item, label: termos.aulas }
+    return item
+  })
   return (
     <aside className={`h-full flex flex-col bg-gray-900 dark:bg-gray-950 text-white transition-all duration-300 ${collapsed ? 'w-16' : 'w-56'}`}>
       {/* Logo */}
@@ -92,9 +145,11 @@ export default function Sidebar({ collapsed }) {
         )}
       </div>
 
+      <ModoSelector collapsed={collapsed} />
+
       {/* Navigation */}
       <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
-        {navItems.map(item => (
+        {itemsAdaptados.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
